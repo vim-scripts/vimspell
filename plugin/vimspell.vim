@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.61 2003/07/22 06:52:23 clabaut Exp $
+"$Id: vimspell.vim,v 1.64 2003/07/28 14:07:39 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell or aspell to highlight spelling errors on the
@@ -7,7 +7,7 @@
 " Original Author:  Claudio Fleiner <claudio@fleiner.com>
 " Url:		    http://www.vim.org/scripts/script.php?script_id=465
 "
-" Last Change:	    22-Jul-2003.
+" Last Change:	    28-Jul-2003.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -407,6 +407,7 @@
 "==============================================================================
 "6. Vimspell bugs  {{{2                                         *vimspell-bugs*
 "
+"    - problem when opening file with a swap files. Messages are not visibles.
 "    - ispell doesn't seem to work with word containing iso-8559 encoded
 "      characters in TeX files...
 "    - BUG reported by Rajarshi Guha. Vim 6.1 hang up with vimspell 1.46 when
@@ -437,11 +438,6 @@
 "==============================================================================
 "7. Vimspell TODO list  {{{2                                    *vimspell-todo*
 "
-"    - Rationalize the use of iskeyword (It does not seems necessary to
-"      save/load the setting)...
-"    - Disable hlsearch when doing <leader>sp and <leader>sn.
-"    - Save 'backspace' option and restore it when leaving buffer according to
-"      the setting of spell_insert_mode
 "    - Add options to prevent some words to be checked (like TODO). If not,
 "      their highlighting is overwritten by spellcheck's one (depends of TODO
 "      highlighting definition... To be investigated).
@@ -505,6 +501,19 @@ let s:spell_german_tex_iskeyword  = "34"
 
 let s:known_spellchecker = "aspell,ispell"
 
+if has("win32") || has("win16")
+  let s:grep="find "
+  let s:find="dir "
+  let s:findname=" "
+  let s:findopt=" "
+else
+  let s:grep="grep "
+  let s:find="find "
+  let s:findname=" -name "
+  let s:findopt=" -print -type f "
+endif
+
+
 
 " Section: Utility functions {{{1
 "
@@ -550,6 +559,7 @@ function! s:SpellProposeAlternatives()
 	  \.": Type 0 for no change, r to replace, *<number> to replace all or"
     exe l:alter
     map <silent> <buffer> 0 <cr>:let r=<SID>SpellRemoveMappings()<cr>
+    map <silent> <buffer> <esc> <cr>:let r=<SID>SpellRemoveMappings()<cr>
     map <silent> <buffer> r 0gewcw
   else
     echo "no alternatives"
@@ -567,6 +577,7 @@ function! s:SpellRemoveMappings()
     exe "unmap <silent> <buffer> *".counter
     let counter=counter+1
   endwhile
+  unmap <silent> <buffer> <esc>
   unmap <silent> <buffer> r
 endfunction
 
@@ -604,17 +615,37 @@ function! s:SpellContextMapping()
 	\ . " :let @_=<SID>SpellAutoDisable()<CR>"
   execute "map <silent> <buffer> "
 	\ . s:SpellGetOption("spell_next_error_map","<Leader>sn")
-	\ . ' /\<\(' . escape(b:spellerrors, "\\") . '\)\><cr>:nohl<cr>'
+	\ . " :call <SID>SpellNextError()<cr>"
+	"\ . ' /\<\(' . escape(b:spellerrors, "\\") . '\)\><cr>'
   execute "map <silent> <buffer> "
 	\ . s:SpellGetOption("spell_previous_error_map","<Leader>sp")
-	\ . ' ?\<\(' . escape(b:spellerrors, "\\") . '\)\><cr>:nohl<cr>'
+	\ . " :call <SID>SpellPreviousError()<cr>"
+	"\ . ' ?\<\(' . escape(b:spellerrors, "\\") . '\)\><cr>'
+endfunction
+
+" Function: s:SpellNextError() {{{2
+" search next word with spelling error.
+function! s:SpellNextError() 
+  let l:save_hls = &l:hlsearch
+  setlocal nohlsearch
+  "echo '/\<\(' . b:spellerrors. '\)\>'
+  call search('\<\(' . b:spellerrors. '\)\>')
+  let &l:hlsearch=l:save_hls
+endfunction
+
+" Function: s:SpellPreviousError() {{{2
+" search previous word with spelling error.
+function! s:SpellPreviousError() 
+  let l:save_hls = &l:hlsearch
+  setlocal nohlsearch
+  call search('\<\(' . b:spellerrors. '\)\>','b')
+  let &l:hlsearch=l:save_hls
 endfunction
 
 " Function: s:SpellSaveIskeyword() {{{2
-" save keyword definition, and add language specific keyword.
+" save keyword definition, and add language specific keyword. Called when
+" setting up a new buffer
 function! s:SpellSaveIskeyword()
-  " TODO : all the initialisation should only be made when entering the
-  " buffer...
   let l:options="spell_".b:spell_language."_".&filetype."_iskeyword"
   if exists("s:".l:options)
     let l:ik_options=s:SpellGetOption(l:options,s:{l:options})
@@ -631,8 +662,8 @@ function! s:SpellSaveIskeyword()
       let l:ik_options=s:SpellGetOption(l:options,"")
     endif
   endif
-  let w:iskeyword=&iskeyword
-  execute "set iskeyword-=".l:ik_options." iskeyword+=". l:ik_options
+  let w:iskeyword=&l:iskeyword
+  execute "setlocal iskeyword-=".l:ik_options." iskeyword+=". l:ik_options
   "let &iskeyword=w:iskeyword.l:ik_options
 endfunction
 
@@ -718,8 +749,8 @@ function! s:SpellCheckLanguage()
     " take first language
     let b:spell_language=substitute(b:spell_internal_language_list,",.*","","")
     if s:enable_menu
-    exec "amenu <silent> disable ".s:menu."Spell.Language.".b:spell_language
-  endif
+      exec "amenu <silent> disable ".s:menu."Spell.Language.".b:spell_language
+    endif
   endif
 endfunction
 
@@ -748,7 +779,7 @@ function! s:SpellGetDicoList()
   let l:dirfiles=""
   if b:spell_executable == "ispell"
     " Try to get libdir from ispell -vv
-    let l:dirs = system("ispell -vv | grep LIBDIR")
+    let l:dirs = system('ispell -vv | '.s:grep.' LIBDIR')
     let l:dirs=substitute(l:dirs,'^.*["]\([^"]*\)["]','\1','')
     " else try some standard installation path (for older ispell ?)
     if !isdirectory(l:dirs)
@@ -761,7 +792,7 @@ function! s:SpellGetDicoList()
       endif
     endif
 
-    let l:dirfiles = glob("`find ". l:dirs ." -name '*.hash' -print -type f`")
+    let l:dirfiles = glob("`".s:find . l:dirs . s:findname . '"*.hash"' . s:findopt ."`")
     let l:dirfiles = substitute(l:dirfiles,"\/[^\n]*\/","","g")
     let l:dirfiles = substitute(l:dirfiles,"[^\n]*-[^\n]*\n","","g")
     let l:dirfiles = substitute(l:dirfiles,"\.hash","","g")
@@ -769,12 +800,12 @@ function! s:SpellGetDicoList()
   elseif b:spell_executable == "aspell"
     " Thanks to Alexandre Beneteau <alexandre.beneteau@wanadoo.fr> for showing
     " me a way to get aspell directory for dictionaries.
-    let l:dirs = system("aspell config | grep 'dict-dir current'")
+    let l:dirs = system('aspell config | '. s:grep . ' "dict-dir current"')
     let l:dirs = substitute(l:dirs,'^.*dict-dir current: \(\/.*\)','\1',"")
     "don't know, why there is a <NUL> char at the end of line ? Get rid of it.
     let l:dirs = substitute(l:dirs,".$","","")
 
-    let l:dirfiles = glob("`find ". l:dirs ." -name '*.multi' -print -type f`")
+    let l:dirfiles = glob("`".s:find . l:dirs . s:findname . '"*.multi"' . s:findopt ."`")
     let l:dirfiles = substitute(l:dirfiles,"\/[^\n]*\/","","g")
     let l:dirfiles = substitute(l:dirfiles,"[^\n]*-[^\n]*\n","","g")
     let l:dirfiles = substitute(l:dirfiles,"\.multi","","g")
@@ -811,49 +842,49 @@ endfunction
 " contains=@cluster.
 function! s:SpellTuneCommentSyntax()
   let b:spell_syntax_options = ""
-  if     &ft == "amiga"
+  if     &l:ft == "amiga"
     syn cluster amiCommentGroup		add=SpellErrors,SpellCorrected
     " highlight only in comments (i.e. if SpellErrors are contained).
     let b:spell_syntax_options = "contained"
-  elseif &ft == "bib"
+  elseif &l:ft == "bib"
     syn cluster bibVarContents     	contains=SpellErrors,SpellCorrected
     syn cluster bibCommentContents 	contains=SpellErrors,SpellCorrected
     let b:spell_syntax_options = "contained"
-  elseif &ft == "c" || &ft == "cpp"
+  elseif &l:ft == "c" || &l:ft == "cpp"
     syn cluster cCommentGroup		add=SpellErrors,SpellCorrected
     let b:spell_syntax_options = "contained"
-  elseif &ft == "csh"
+  elseif &l:ft == "csh"
     syn cluster cshCommentGroup		add=SpellErrors,SpellCorrected
     let b:spell_syntax_options = "contained"
-  elseif &ft == "dcl"
+  elseif &l:ft == "dcl"
     syn cluster dclCommentGroup		add=SpellErrors,SpellCorrected
     let b:spell_syntax_options = "contained"
-  elseif &ft == "fortran"
+  elseif &l:ft == "fortran"
     syn cluster fortranCommentGroup	add=SpellErrors,SpellCorrected
     syn match   fortranGoodWord contained	"^[Cc]\>"
     syn cluster fortranCommentGroup	add=fortranGoodWord
     hi link fortranGoodWord fortranComment
     let b:spell_syntax_options = "contained"
-  elseif &ft == "sh" || &ft == "ksh" || &ft == "bash"
+  elseif &l:ft == "sh" || &l:ft == "ksh" || &l:ft == "bash"
     syn cluster shCommentGroup		add=SpellErrors,SpellCorrected
-  elseif &ft == "b"
+  elseif &l:ft == "b"
     syn cluster bCommentGroup		add=SpellErrors,SpellCorrected
     let b:spell_syntax_options = "contained"
-  elseif &ft == "xml"
+  elseif &l:ft == "xml"
     syn cluster xmlText		add=SpellErrors,SpellCorrected
     syn cluster xmlRegionHook	add=SpellErrors,SpellCorrected
 
     let b:spell_syntax_options = "contained"
-  elseif &ft == "tex"
+  elseif &l:ft == "tex"
     syn cluster texCommentGroup		add=SpellErrors,SpellCorrected
 
     syn cluster texMatchGroup		add=SpellErrors,SpellCorrected
 
-  elseif &ft == "vim"
+  elseif &l:ft == "vim"
     syn cluster vimCommentGroup		add=SpellErrors,SpellCorrected
 
     let b:spell_syntax_options = "contained"
-  elseif &ft == "otl"
+  elseif &l:ft == "otl"
     syn cluster otlGroup		add=SpellErrors,SpellCorrected
     let b:spell_syntax_options = "contained"
   endif
@@ -898,7 +929,7 @@ function! s:SpellSetupBuffer()
   " spell checking on a buffer where it was previously disabled.
   let b:spell_auto_type = s:SpellGetOption("spell_auto_type",
       \"tex,mail,text,html,sgml,otl,cvs,none")
-  if !exists("b:spell_auto_enable")
+  if !exists("b:spell_auto_enable") 
 	\ && ( (strlen(&filetype)
 		\ && (match(b:spell_auto_type,&filetype) >= 0
 		  \ ||match(b:spell_auto_type, "all") >=0 )
@@ -907,6 +938,10 @@ function! s:SpellSetupBuffer()
 		\ && match(b:spell_auto_type, "none") >=0 )
 	  \ )
     call s:SpellAutoEnable()
+  else
+    if s:SpellGetOption("spell_insert_mode",1) && exists("b:save_backspace")
+      let &backspace=b:save_backspace
+    endif
   endif
 
   call s:SpellCheckLanguage()
@@ -918,6 +953,7 @@ function! s:SpellSetupBuffer()
   " user need to be able to backspace before the start of insertion if
   " spell_insert_mode is set... (else backspace won't work for the user...)
   if s:SpellGetOption("spell_insert_mode",1)
+    let b:save_backspace=&backspace
     if &backspace =~ '[012]'
       set backspace=2
     else
@@ -1067,8 +1103,9 @@ endfunction
 " *without* writing the buffer. Define highlighting and mapping for correction
 " and navigation.
 function! s:SpellCheckWindow()
-  " SpellCreateTemp must have been called.
-  if !exists("w:wtop")
+  " SpellCreateTemp must have been called and spell_auto_enable is not set or
+  " is equal to 0
+  if !exists("w:wtop") || (exists("b:spell_auto_enable") && b:spell_auto_enable==0)
     return
   endif
   " save position
@@ -1172,6 +1209,10 @@ endfunction
 " TODO : verify that there was a new word before the space, to prevent a call
 " to ispell when several spaces are typed.
 function! s:SpellCheckLine()
+  " return if there is not a word character before the cursor
+  if  getline(line("."))[col(".") - 2] !~ '\w'
+    return
+  endif
 
   " Make sure spelling check environment is correctly setup before we proceed:
   if !exists("b:spell_buffer_setup")
@@ -1264,15 +1305,19 @@ function! s:SpellAutoEnable()
   " Add <space> mapping if the auto spell is enabled and required in insert
   " mode (by mean of <space> mapping).
   " Emit a warning if an existing mapping is overriden
-  " TODO: retrieve the previous mapping and add a handler (use of imap ) ?
+  " TODO: retrieve the previous mapping and add a handler ? Not easy, as it
+  " depend of the previous mapping...
   if s:SpellGetOption("spell_insert_mode",1) 
 	\ && exists("b:spell_auto_enable") && b:spell_auto_enable
+    "let l:rhs="<cr>"
     if maparg('<Space>','i') != ""
       echomsg "vimspell:<space> already mapped. Overriding previously defined map."
+      "let l:rhs='<cr>\|'.maparg('<space>','i')
       silent "iunmap <buffer> <space>"
       silent "iunmap <space>"
     endif
-    inoremap <buffer><silent> <Space> <Space><C-O>:SpellCheckLine<cr>
+    "echomsg 'inoremap <buffer><silent> <Space> <Space><C-O>:SpellCheckLine'. l:rhs
+    exec 'inoremap <buffer><silent> <Space> <Space><C-O>:SpellCheckLine<cr>'
   endif
 endfunction
 
@@ -1303,10 +1348,7 @@ function! s:SpellAutoDisable()
     exe "amenu <silent> disable ".s:menu."Spell.No\\ auto"
   endif
   if s:SpellGetOption("spell_insert_mode",1)
-    "TODO why this doesn't work ?
-    echomsg "unmapping <space>"
-    silent "iunmap <space>"
-    silent "iunmap <buffer> <space>"
+    silent iunmap <buffer> <space>
   endif
 endfunction
 
@@ -1315,6 +1357,10 @@ endfunction
 function! s:SpellSetSpellchecker(prog)
   if matchstr(s:known_spellchecker,a:prog) == ""
     echo "No driver for '".a:prog."' spell checker."
+    return
+  endif
+  " Nothing to do if the executable is the same as the one previously set.
+  if exists("b:spell_executable") && b:spell_executable == a:prog
     return
   endif
 
@@ -1562,7 +1608,7 @@ endif
     endif
   endif
   let s:revision=
-	\ substitute("$Revision: 1.61 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\ substitute("$Revision: 1.64 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! call s:SpellInstallDocumentation(s:revision)
   if exists("s:help_doc")
     echo "vimspell v" . s:revision . ": Installed help-documentation."
