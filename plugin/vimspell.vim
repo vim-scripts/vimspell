@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.73 2004/04/19 13:45:52 clabaut Exp $
+"$Id: vimspell.vim,v 1.78 2004/04/20 08:43:18 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell or aspell to highlight spelling errors on the
@@ -8,7 +8,7 @@
 " Maintainer:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Url:		    http://www.vim.org/scripts/script.php?script_id=465
 "
-" Last Change:	    19-Apr-2004.
+" Last Change:	    20-Apr-2004.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -36,6 +36,8 @@
 "		      cleaning.
 "		    Hari Krishna Dara who shows me how to map a key which 
 "		      calls a function without leaving the insert mode.
+"		    Hugo Haas who suggests the automatic language guessing 
+"		      function, and provides me with a sample function.
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 "
 " Section: Documentation 
@@ -68,7 +70,8 @@ if &shell =~ 'csh'
 endif
 
 let loaded_vimspell = 1
-scriptencoding iso-8859-15
+"causes a bug with iskeyword usage when encoding=utf-8
+"scriptencoding iso-8859-15
 
 " Filetype, spell checker and/or language dependents default options {{{2
 
@@ -156,6 +159,12 @@ endfunction
 " Propose alternative for keyword under cursor. Define mapping used to correct
 " the word under the cursor.
 function! s:SpellProposeAlternatives()
+  " If auto spelling is not enable, we should ensure that SpellSetupBuffer was
+  " called in order to work properly.
+  if !s:enable_autocommand
+    call s:SpellSetupBuffer()
+  endif
+
   call s:SpellCheckLanguage()
 
   let l:alternatives=system("echo \"".escape(expand("<cword>"),'\"')."\" | "
@@ -208,13 +217,12 @@ function! s:SpellProposeAlternatives()
 	  let ch=c
 	  let c=getchar()
 	  let c=nr2char(c)
-	  if '1' <= c && c <= '9'
+	  if '0' <= c && c <= '9'
 	    let c=ch . c
 	  else
 	    let c=ch
 	  endif
 	endif
-	echomsg c."  ".ch."  ".l:alterValue
 	let word=substitute(l:alterValue,'^.*,'.c.': \([^,]\+\),.*', '\1','')
 	if word != l:alterValue
 	  silent exe replace
@@ -436,6 +444,47 @@ function! s:SpellVerifyLanguage(language)
   return 0
 endfunction
 
+" Function: s:SpellGuessLanguage() {{{2
+" try to guess spelling language
+function! s:SpellGuessLanguage()
+  call s:SpellCheckLanguage()
+
+  let l:langnum=1
+  let l:score=999999
+  let l:bestlang=""
+
+  let l:mlang=substitute(b:spell_internal_language_list,",.*","","")
+
+  while matchstr(l:mlang,",") == "" 
+	\ && l:langnum <= s:SpellGetOption("spell_guess_max_languages",3)
+    let l:errors=system(b:spell_executable . b:spell_options . " -l -d " .
+	  \ l:mlang . " < " . escape(expand("%"),' \'))
+    let l:errors=escape(l:errors,'"')
+    let l:index=stridx(l:errors, "\n")
+    let l:spellcount=0
+    let l:errorcount=0
+
+    "count errors and get the score from it
+    while (l:index > 0 && l:errorcount <= l:score)
+      " use stridx/strpart instead of sustitute, because it is faster
+      let l:oneError="|".strpart(l:errors, 0, l:index)."\\"
+      let l:errors=strpart(l:errors, l:index+1)
+      let l:index=stridx(l:errors, "\n")
+      let l:errorcount=l:errorcount+1
+    endwhile
+    if l:errorcount < l:score
+      let l:score = l:errorcount
+      let l:bestlang = l:mlang
+    endif
+    "echomsg l:errorcount."-".l:score.":".l:mlang
+    let l:langnum = l:langnum + 1
+
+    let l:mlang=substitute(b:spell_internal_language_list,".*\\C" . l:mlang
+	  \ . ",\\([^,]\\+\\),.*","\\1","")
+  endwhile
+  call s:SpellSetLanguage(l:bestlang)
+endfunction
+
 " Function: s:SpellGetDicoList() {{{2
 " try to find a list of installed dictionaries
 function! s:SpellGetDicoList()
@@ -506,67 +555,69 @@ endfunction
 " This can be done only for those syntax files' comment blocks that
 " contains=@cluster.
 function! s:SpellTuneCommentSyntax()
-  let b:spell_syntax_options = ""
-  if     &l:ft == "amiga"
-    syn cluster amiCommentGroup		add=SpellErrors,SpellCorrected
-    " highlight only in comments (i.e. if SpellErrors are contained).
-    let b:spell_syntax_options = "contained"
-  elseif &l:ft == "bib"
-    syn cluster bibVarContents     	contains=SpellErrors,SpellCorrected
-    syn cluster bibCommentContents 	contains=SpellErrors,SpellCorrected
-    let b:spell_syntax_options = "contained"
-  elseif &l:ft == "c" || &l:ft == "cpp"
-    syn cluster cCommentGroup		add=SpellErrors,SpellCorrected
-    let b:spell_syntax_options = "contained"
-  elseif &l:ft == "csh"
-    syn cluster cshCommentGroup		add=SpellErrors,SpellCorrected
-    let b:spell_syntax_options = "contained"
-  elseif &l:ft == "dcl"
-    syn cluster dclCommentGroup		add=SpellErrors,SpellCorrected
-    let b:spell_syntax_options = "contained"
-  elseif &l:ft == "fortran"
-    syn cluster fortranCommentGroup	add=SpellErrors,SpellCorrected
-    syn match   fortranGoodWord contained	"^[Cc]\>"
-    syn cluster fortranCommentGroup	add=fortranGoodWord
-    hi link fortranGoodWord fortranComment
-    let b:spell_syntax_options = "contained"
-  elseif &l:ft == "sh" || &l:ft == "ksh" || &l:ft == "bash"
-    syn cluster shCommentGroup		add=SpellErrors,SpellCorrected
-  elseif &l:ft == "b"
-    syn cluster bCommentGroup		add=SpellErrors,SpellCorrected
-    let b:spell_syntax_options = "contained"
-  elseif &l:ft == "xml"
-    syn cluster xmlText		add=SpellErrors,SpellCorrected
-    syn cluster xmlString		add=SpellErrors,SpellCorrected
-    syn cluster xmlRegionHook	add=SpellErrors,SpellCorrected
+  if !exists("b:spell_syntax_options")
+    let b:spell_syntax_options = ""
+    if     &l:ft == "amiga"
+      syn cluster amiCommentGroup		add=SpellErrors,SpellCorrected
+      " highlight only in comments (i.e. if SpellErrors are contained).
+      let b:spell_syntax_options = "contained"
+    elseif &l:ft == "bib"
+      syn cluster bibVarContents     	contains=SpellErrors,SpellCorrected
+      syn cluster bibCommentContents 	contains=SpellErrors,SpellCorrected
+      let b:spell_syntax_options = "contained"
+    elseif &l:ft == "c" || &l:ft == "cpp"
+      syn cluster cCommentGroup		add=SpellErrors,SpellCorrected
+      let b:spell_syntax_options = "contained"
+    elseif &l:ft == "csh"
+      syn cluster cshCommentGroup		add=SpellErrors,SpellCorrected
+      let b:spell_syntax_options = "contained"
+    elseif &l:ft == "dcl"
+      syn cluster dclCommentGroup		add=SpellErrors,SpellCorrected
+      let b:spell_syntax_options = "contained"
+    elseif &l:ft == "fortran"
+      syn cluster fortranCommentGroup	add=SpellErrors,SpellCorrected
+      syn match   fortranGoodWord contained	"^[Cc]\>"
+      syn cluster fortranCommentGroup	add=fortranGoodWord
+      hi link fortranGoodWord fortranComment
+      let b:spell_syntax_options = "contained"
+    elseif &l:ft == "sh" || &l:ft == "ksh" || &l:ft == "bash"
+      syn cluster shCommentGroup		add=SpellErrors,SpellCorrected
+    elseif &l:ft == "b"
+      syn cluster bCommentGroup		add=SpellErrors,SpellCorrected
+      let b:spell_syntax_options = "contained"
+    elseif &l:ft == "xml"
+      syn cluster xmlText		add=SpellErrors,SpellCorrected
+      syn cluster xmlString		add=SpellErrors,SpellCorrected
+      syn cluster xmlRegionHook	add=SpellErrors,SpellCorrected
 
-    let b:spell_syntax_options = "contained"
-  elseif &l:ft == "tex"
-    syn cluster texCommentGroup		add=SpellErrors,SpellCorrected
+      let b:spell_syntax_options = "contained"
+    elseif &l:ft == "tex"
+      syn cluster texCommentGroup		add=SpellErrors,SpellCorrected
 
-    syn cluster texMatchGroup		add=SpellErrors,SpellCorrected
+      syn cluster texMatchGroup		add=SpellErrors,SpellCorrected
 
-  elseif &l:ft == "vim"
-    syn cluster vimCommentGroup		add=SpellErrors,SpellCorrected
+    elseif &l:ft == "vim"
+      syn cluster vimCommentGroup		add=SpellErrors,SpellCorrected
 
-    let b:spell_syntax_options = "contained"
-  elseif &l:ft == "otl"
-    syn cluster otlGroup		add=SpellErrors,SpellCorrected
-    let b:spell_syntax_options = "contained"
+      let b:spell_syntax_options = "contained"
+    elseif &l:ft == "otl"
+      syn cluster otlGroup		add=SpellErrors,SpellCorrected
+      let b:spell_syntax_options = "contained"
+    endif
+
+    " attempt to infer spellcheck use - is the Spell cluster included 
+    " somewhere ?  " (piece of code directly taken from the very good
+    " engspchk.vim) 
+    let keep_rega= @a
+    redir @a
+    silent syn
+    redir END
+    if match(@a,"@Spell") != -1
+      syn cluster Spell                add=SpellErrors,SpellCorrected
+      let b:spell_syntax_options = "contained"
+    endif
+    let @a= keep_rega
   endif
-
-  " attempt to infer spellcheck use - is the Spell cluster included 
-  " somewhere ?  " (piece of code directly taken from the very good
-  " engspchk.vim) 
-  let keep_rega= @a
-  redir @a
-  silent syn
-  redir END
-  if match(@a,"@Spell") != -1
-    syn cluster Spell                add=SpellErrors,SpellCorrected
-    let b:spell_syntax_options = "contained"
-  endif
-  let @a= keep_rega
 
 endfunction
 
@@ -614,6 +665,8 @@ function! s:SpellSetupBuffer()
   " spell checking on a buffer where it was previously disabled.
   let b:spell_auto_type = s:SpellGetOption("spell_auto_type",
       \"tex,mail,text,html,sgml,otl,cvs,none")
+  let b:spell_guess_language_ft = s:SpellGetOption("spell_guess_language_ft",
+      \"tex,mail,text,html")
   if !exists("b:spell_auto_enable") 
 	\ && ( (strlen(&filetype)
 		\ && (match(b:spell_auto_type,'\<'.&filetype.'\>') >= 0
@@ -622,8 +675,20 @@ function! s:SpellSetupBuffer()
 	  \ || (!strlen(&filetype)
 		\ && match(b:spell_auto_type, '\<none\>') >=0 )
 	  \ )
-    call s:SpellAutoEnable()
+    " Shall we try to guess the language use ?
+    if ( (strlen(&filetype)
+	      \ && (match(b:spell_guess_language_ft,'\<'.&filetype.'\>') >= 0
+		\ ||match(b:spell_guess_language_ft, '\<all\>') >=0 )
+	    \ )
+	\ || (!strlen(&filetype)
+	      \ && match(b:spell_guess_language_ft, '\<none\>') >=0 )
+	\ )
+      call s:SpellAutoEnable(1)
+    else
+      call s:SpellAutoEnable(0)
+    endif
   else
+    let b:spell_auto_enable=0
     if s:SpellGetOption("spell_insert_mode",1) && exists("b:save_backspace")
       let &backspace=b:save_backspace
     endif
@@ -1045,7 +1110,7 @@ endfunction
 
 " Function: s:SpellAutoEnable() {{{2
 " Enable auto spelling.
-function! s:SpellAutoEnable()
+function! s:SpellAutoEnable(guess)
   if exists("b:spell_auto_enable") && b:spell_auto_enable
     return
   endif
@@ -1096,6 +1161,7 @@ function! s:SpellAutoEnable()
       exec 'inoremap <buffer><silent> <CR> <CR><C-R>=<SID>SpellCheckLine()<cr>'
     endif
   endif
+  call s:SpellGuessLanguage()
 endfunction
 
 " Function: s:SpellAutoDisable() {{{2
@@ -1165,7 +1231,8 @@ function! s:SpellSetSpellchecker(prog)
     let l:must_verify = 0
   endif
   let b:spell_internal_language_list = b:spell_internal_language_list.","
-    " Init language menu
+
+   " Init language menu
   if s:enable_menu
     exec "aunmenu <silent> ".s:menu."Spell.Language"
   endif
@@ -1400,7 +1467,7 @@ endif
 " Section: Doc installation {{{1
 "
   let s:revision=
-	\ substitute("$Revision: 1.73 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\ substitute("$Revision: 1.78 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! let s:install_status =
       \ s:SpellInstallDocumentation(expand('<sfile>:p'), s:revision)
   if (s:install_status == 1)
@@ -1708,13 +1775,33 @@ CONTENT                                                    *vimspell-contents*
       This variable, if set, defines a list of filetype for which spell check
       is done on the fly by default. Set it to "all" if you want on-the-fly
       spell check for every filetype. You can use the token "none" if you
-      want on-the-fly spell check for file which do not have a filetype.
+      want on-the-fly spell check for files which do not have a filetype.
       Defaults to: >
  	  let spell_auto_type = "tex,mail,text,html,sgml,otl,cvs,none"
 <     Note: the "text" and "otl" filetypes are not defined by vim. Look at
       |new-filetype| to see how you could yourself define a new filetype.
 
 
+    spell_guess_language_ft                          *spell_guess_language_ft*
+      This variable, if set, defines a list of filetype for which vimspell try 
+      to automatically find which language is in use.  Set it to "all" if you 
+      want to use the guess heuristic for every filetype. You can use the 
+      token "none" if you want to use it for files which do not have a 
+      filetype.
+      Defaults to: >
+	  let spell_guess_language_ft = "tex,mail,text,html"
+<     Note: the "text" filetype is not defined by vim. Look at |new-filetype| 
+      to see how you could yourself define a new filetype.
+      
+    
+    spell_guess_max_languages                      *spell_guess_max_languages*
+      This variable if set, set up how many languages are checked against the 
+      current buffer when vimspell try to determines the language in use. At 
+      most 'spell_ispell_sgml_args' are checked, and the one which best 
+      matches the current buffer is selected.
+      Defaults to: >
+	  let spell_guess_max_languages = 3
+<
 
     spell_insert_mode                                      *spell_insert_mode*
       This variable if set, set up a hack to allow spell checking in insert
@@ -1878,12 +1965,9 @@ CONTENT                                                    *vimspell-contents*
 ==============================================================================
 7. Vimspell TODO list  {{{2                                    *vimspell-todo*
 
-    - optimize SpellSetupBuffer, which takes way too long time at each buffer
-      switching (It wasn't the case before... Strange).
     - Add a way to customize the spell checking (so as to not use the syntax
       highlighting as a way to determine was as to be checked). For example,
       with the current syntax files, html and xml are badly checked.
-    - Add a language auto detection function.
     - Change vimspell so that it works with csh (use of backslash_quote
       variable) ?
     - Add a command to spellcheck a visually selected region
