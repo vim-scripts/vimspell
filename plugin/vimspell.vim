@@ -1,11 +1,11 @@
-"$Id: vimspell.vim,v 1.14 2002/11/25 09:20:52 clabaut Exp $
+"$Id: vimspell.vim,v 1.16 2002/11/27 10:08:55 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell to highlight spelling errors on the fly, or on
 "		    demand. 
 " Author:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Original Author:  Claudio Fleiner <claudio@fleiner.com>
-" Last Change:	    23-Nov-2002.
+" Last Change:	    27-Nov-2002.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -15,6 +15,8 @@
 "		      script,
 "		    Matthias Veit <matthias_veit@yahoo.de> for implementation
 "		      idea of fly spelling.
+"		    Peter Valach <pvalach@gmx.net> for suggestions, bug
+"		      corrections, and vim conformance tip.
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 "
 " Section: Documentation {{{1
@@ -27,15 +29,17 @@
 "   Need 'ispell', 'awk', 'sort' and 'sed' in order to work properly.
 "
 "   The default mappings are defined as follow:
-"   <F6>      - write file, spell file & highlight spelling mistakes
-"   <F7>      - switch between languages
-"   <ESC><F6> - return to normal syntax coloring
-"   <ESC>n    - go to next error.
-"   <ESC>p    - go to previous error.
-"   <ESC>I    - insert word under cursor into directory
-"   <ESC>U    - insert word under cursor as lowercase into directory
-"   <ESC>A    - accept word for this session only
-"   <ESC>/    - check for alternatives
+"   <Leader>ss - write file, spell file & highlight spelling mistakes
+"   <Leader>sl - switch between languages
+"   <Leader>sq - return to normal syntax coloring
+"   <Leader>sn - go to next error.
+"   <Leader>sp - go to previous error.
+"   <Leader>si - insert word under cursor into directory
+"   <Leader>su - insert word under cursor as lowercase into directory
+"   <Leader>sa - accept word for this session only
+"   <Leader>s? - check for alternatives
+"
+"   See below for changing them.
 "
 "
 "
@@ -54,7 +58,7 @@
 "   SpellAutoEnable
 "     Enable on-the-fly spell checking.
 "
-"   SpellAutoEnable
+"   SpellAutoDisable
 "     Disable on-the-fly spell checking.
 "
 "   SpellChangeLanguage
@@ -71,11 +75,11 @@
 "
 "   nnoremap <Leader>sc <Plug>SpellCheck
 "
-" The default mappings are as follow:
+" The default global mappings are as follow:
 "
-"   <F6>      SpellCheck
-"   <ESC>/    SpellProposeAlternatives
-"   <ESC><F7> SpellChangeLanguage
+"   <Leader>ss  SpellCheck
+"   <Leader>s?  SpellProposeAlternatives
+"   <Leader>sl	SpellChangeLanguage
 "
 " Options documentation: {{{2
 "---------------------------- 
@@ -83,27 +87,29 @@
 "
 "   spell_case_accept_map	
 "     This variable, if set, determines the mapping use to accept word under
-"     cursor, taking case into account. Defaults to "<ESC>i".
+"     cursor, taking case into account. Defaults to "<Leader>si".
+"     With ispell the accepted words are put in the ./.ispell_<language> file
+"     if exists or in the  $HOME/.ispell_<language> file.
 "     
 "   spell_accept_map
-"     This variable, if set, determines the mapping use to accept word under
-"     cursor. Defaults to "<ESC>a".
+"     This variable, if set, determines the mapping use to accept lowercased
+"     word under cursor. Defaults to "<Leader>su".
 "
 "   spell_ignore_map
 "     This variable, if set, determines the mapping use to ignore the spelling
-"     error for the current session. Defaults to "<ESC>u".
+"     error for the current session. Defaults to "<Leader>sa".
 "
 "   spell_next_error_map
 "     This variable, if set, determines the mapping use to jump to the next
-"     spelling error. Defaults to "<ESC>n".
+"     spelling error. Defaults to "<Leader>sn".
 "
 "   spell_previous_error_map
 "     This variable, if set, determines the mapping use to jump to the
-"     previous spelling error. Defaults to "<ESC>p".
+"     previous spelling error. Defaults to "<Leader>sp".
 "
 "   spell_exit_map
 "     This variable, if set, determines the mapping use to exit from
-"     spelling-checker mode. Defaults to "<ESC><F6>".
+"     spelling-checker mode. Defaults to "<Leader>sq".
 "
 "   spell_executable
 "     This variable if set defines the name of the spell-checker. Defaults to
@@ -111,7 +117,7 @@
 "
 "   spell_update_time
 "     This variable if set defines the duration (in ms) between the last
-"     cursor movement and the on-the-fly spell check.
+"     cursor movement and the on-the-fly spell check. Defaults to 2000.
 "
 "   spell_language_list
 "     This variable if set defines the language availables for spelling. The
@@ -122,10 +128,13 @@
 " TODO list: {{{2
 "---------------- 
 "
+"   - BUG - correct the current behaviour where AutoSpell lose SPellCheck
+"     errors...
 "   - selection of syntax group for which spelling is done (for example, only
 "     string and comments are of interest in a C source code..)
 "   - documentation in a better english :-/
 "   - reduce the number of external tools used. 
+"   - add popup menu for suggestion and replacement.
 "   - more speller parametrization
 "   - ...
 "
@@ -205,12 +214,12 @@ endfunction
 " Function: s:SpellContextMapping() {{{2
 " Define mapping defined for spell checking.
 function! s:SpellContextMapping()
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_case_accept_map","<ESC>i") . " :call <SID>SpellCaseAccept()<cr><c-l>"
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_accept_map","<ESC>u") . ":call <SID>SpellAccept()<cr><c-l>"
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_ignore_map","<ESC>a") . " :call <SID>SpellIgnore()<cr><c-l>"
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_exit_map","<ESC><F6>") . " :let @_=<SID>SpellExit()<CR>"
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_next_error_map","<esc>n") . " /" . b:spellerrors . "<cr>:nohl<cr>"
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_previous_error_map","<esc>p") . " ?" . b:spellerrors . "<cr>:nohl<cr>"
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_case_accept_map","<Leader>si") . " :call <SID>SpellCaseAccept()<cr><c-l>"
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_accept_map","<Leader>su") . ":call <SID>SpellAccept()<cr><c-l>"
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_ignore_map","<Leader>sa") . " :call <SID>SpellIgnore()<cr><c-l>"
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_exit_map","<Leader>sq") . " :let @_=<SID>SpellExit()<CR>"
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_next_error_map","<Leader>sn") . " /" . b:spellerrors . "<cr>:nohl<cr>"
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_previous_error_map","<Leader>sp") . " ?" . b:spellerrors . "<cr>:nohl<cr>"
 endfunction                                        
                                                    
 " Function: s:SpellCheck() {{{2
@@ -219,7 +228,7 @@ endfunction
 function! s:SpellCheck() 
   syn case match
   let @_=s:SpellCheckLanguage()
-  w
+  update
   syn match SpellErrors "xxxxx"
   syn clear SpellErrors
   let b:spellerrors="\\<\\(nonexisitingwordinthisdociumnt"
@@ -335,7 +344,7 @@ endfunction
 
 " Function: s:SpellIgnore() {{{2
 " ignbore keyword under cursor for current vim session.
-function! s:SpellAccept() 
+function! s:SpellIgnore() 
   call s:SpellSaveIskeyword()
   syntax case match
   execute "syntax match SpellCorrected \"\\<".expand("<cword>")."\\>\" transparent contains=NONE ".b:spell_options
@@ -350,15 +359,16 @@ function! s:SpellCheckLanguage()
   if !exists("b:spell_language")
     " take first language
     let b:spell_language=substitute(g:spell_language_list,",.*","","")
+    exec "amenu <silent> disable Plugin.Spell.Language.".b:spell_language
   endif
 endfunction
 
 " Function: s:SpellSetLanguage(a:language) {{{2
 " Select a language
 function! s:SpellSetLanguage(language)
-  exec "amenu <silent> enable &Plugin.Spell.&Language.".b:spell_language
+  exec "amenu <silent> enable Plugin.Spell.Language.".b:spell_language
   let b:spell_language=a:language
-  exec "amenu <silent> disable &Plugin.Spell.&Language.".b:spell_language
+  exec "amenu <silent> disable Plugin.Spell.Language.".b:spell_language
   "TODO : some verification about arguments ?
   "force spell check
   let b:my_changedtick=0
@@ -372,7 +382,7 @@ function! s:SpellChangeLanguage()
     " take first language
     let b:spell_language=substitute(g:spell_language_list,",.*","","")
   else
-    exec "amenu <silent> enable &Plugin.Spell.&Language.".b:spell_language
+    exec "amenu <silent> enable Plugin.Spell.Language.".b:spell_language
     " take next one
     let l:res=substitute(g:spell_language_list,".*" . b:spell_language . ",\\([^,]*\\),.*","\\1","")
     if l:res == g:spell_language_list
@@ -381,7 +391,7 @@ function! s:SpellChangeLanguage()
     endif
     let b:spell_language=l:res
   endif
-  exec "amenu <silent> disable &Plugin.Spell.&Language.".b:spell_language
+  exec "amenu <silent> disable Plugin.Spell.Language.".b:spell_language
   "force spell check
   let b:my_changedtick=0
   echo "Language: ".b:spell_language
@@ -393,14 +403,31 @@ function! s:SpellGetDicoList()
   let l:default = "english,francais"
   let l:dirfiles=""
   if s:spell_executable == "ispell"
-    let l:dirfiles = glob("`ls -F /usr/lib/ispell/*hash`")
-    let l:dirfiles = substitute(l:dirfiles,"\/usr\/lib\/ispell\/","","g")
+    if isdirectory("/usr/lib/ispell/")
+      let l:dirs =  "/usr/lib/ispell/"
+    elseif isdirectory("/usr/local/lib/ispell/")
+      let l:dirs =  "/usr/local/lib/ispell/"
+    else
+      let l:dirs =  "/usr/local/lib"
+    endif
+
+    let l:dirfiles = glob("`find ". l:dirs ." -name '*.hash' -print -type f`")
+    let l:dirfiles = substitute(l:dirfiles,"\/[^\n]*\/","","g")
+    let l:dirfiles = substitute(l:dirfiles,"[^\n]*-[^\n]*\n","","g")
     let l:dirfiles = substitute(l:dirfiles,"\.hash","","g")
     let l:dirfiles = substitute(l:dirfiles,"\n",",","g")
   elseif s:spell_executable == "aspell"
-    " TODO better selection ? I don't know aspellenough...
-    let l:dirfiles = glob("`ls -F /usr/lib/aspell/*.multi`")
-    let l:dirfiles = substitute(l:dirfiles,"\/usr\/lib\/aspell\/","","g")
+    " TODO better selection ? I don't know aspell enough...
+    if isdirectory("/usr/lib/aspell/")
+      let l:dirs =  "/usr/lib/aspell/"
+    elseif isdirectory("/usr/local/lib/aspell/")
+      let l:dirs =  "/usr/local/lib/aspell/"
+    else
+      let l:dirs =  "/usr/lib/ /usr/local/lib"
+    endif
+    let l:dirfiles = glob("`find ". l:dirs ." -name '*.multi' -print -type f`")
+    let l:dirfiles = substitute(l:dirfiles,"\/[^\n]*\/","","g")
+    let l:dirfiles = substitute(l:dirfiles,"[^\n]*-[^\n]*\n","","g")
     let l:dirfiles = substitute(l:dirfiles,"\.multi","","g")
     let l:dirfiles = substitute(l:dirfiles,"\n",",","g")
   endif
@@ -442,6 +469,8 @@ function! s:SpellAutoEnable()
     execute "autocmd! BufWinLeave ". filename ." call s:SpellDeleteTemp()"
   augroup END
   call s:SpellCreateTemp()
+  amenu <silent> disable Plugin.Spell.Automatic
+  amenu <silent> enable Plugin.Spell.No\ auto
 endfunction
 
 " Function: s:SpellAutoDisable() {{{2
@@ -455,6 +484,8 @@ function! s:SpellAutoDisable()
   let  &updatetime=g:spell_old_update_time
   unlet! w:wtop
   call s:SpellExit()
+  amenu <silent> enable Plugin.Spell.Automatic
+  amenu <silent> disable Plugin.Spell.No\ auto
 endfunction
 
 " Section: Command definitions {{{1
@@ -477,15 +508,15 @@ nnoremap <silent> <unique> <Plug>SpellProposeAlternatives  :SpellProposeAlternat
 
 " Section: Default mappings {{{1
 if !hasmapto('<Plug>SpellCheck')
-  nmap <silent> <unique> <F6> <Plug>SpellCheck
+  nmap <silent> <unique> <Leader>ss <Plug>SpellCheck
 endif
 
 if !hasmapto('<Plug>SpellProposeAlternatives')
-  nmap <silent> <unique> <ESC>/ <Plug>SpellProposeAlternatives
+  nmap <silent> <unique> <Leader>s? <Plug>SpellProposeAlternatives
 endif
 
 if !hasmapto('<Plug>SpellChangeLanguage')
-  nmap <silent> <unique> <ESC><F7> <Plug>SpellChangeLanguage
+  nmap <silent> <unique> <Leader>sl <Plug>SpellChangeLanguage
 endif
 
 
@@ -503,14 +534,14 @@ endif
 
 
 " Section: Menu items {{{1
-exec "amenu <silent> &Plugin.Spell.&Spell        <Plug>SpellCheck"
-exec "amenu <silent> &Plugin.Spell.&Off        <Plug>SpellExit"
-exec "amenu <silent> &Plugin.Spell.&Alternative  <Plug>SpellProposeAlternatives"
-exec "amenu <silent> &Plugin.Spell.&Language.Next\ one     <Plug>SpellChangeLanguage"
+amenu <silent> &Plugin.Spell.&Spell              <Plug>SpellCheck
+amenu <silent> &Plugin.Spell.&Off                <Plug>SpellExit
+amenu <silent> &Plugin.Spell.&Alternative        <Plug>SpellProposeAlternatives"
+amenu <silent> &Plugin.Spell.&Language.Next\ one <Plug>SpellChangeLanguage
 amenu <silent> &Plugin.Spell.&Language.-Sep-	    :
 amenu <silent> &Plugin.Spell.-Sep-	    :
-amenu <silent> &Plugin.Spell.A&utomatic   <Plug>SpellAutoEnable
-amenu <silent> &Plugin.Spell.&No\ auto   <Plug>SpellAutoDisable
+amenu <silent> &Plugin.Spell.A&utomatic <Plug>SpellAutoEnable
+amenu <silent> &Plugin.Spell.&No\ auto  <Plug>SpellAutoDisable  
 
 let s:mlang=substitute(g:spell_language_list,",.*","","")
 while s:mlang != g:spell_language_list
