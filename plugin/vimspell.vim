@@ -1,11 +1,11 @@
-"$Id: vimspell.vim,v 1.23 2002/12/10 17:40:09 clabaut Exp $
+"$Id: vimspell.vim,v 1.25 2002/12/11 13:25:21 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell to highlight spelling errors on the fly, or on
 "		    demand. 
 " Author:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Original Author:  Claudio Fleiner <claudio@fleiner.com>
-" Last Change:	    10-Dec-2002.
+" Last Change:	    11-Dec-2002.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -196,14 +196,6 @@
 "   - BUG - errors did not get highlighted in other highlight groups (in
 "     comments for example). Need documentation, and/or overwriting of
 "     existings rules with addition of "contains SpellErrors".
-"   - BUG - problem with aspell (0.33.7-redhat 7.2) :
-"     the command :
-"	* new_word
-"     only takes effect if it's followed by the "#" command, like this:
-"       * new_word
-"       #
-"     Reported by Andrew McCarthy <andrewmc-vim@celt.dias.ie> who kindly
-"     corrected my english.
 "   - selection of syntax group for which spelling is done (for example, only
 "     string and comments are of interest in a C source code..)
 "   - reduce the number of external tools used. 
@@ -327,7 +319,7 @@ endfunction
 function! s:SpellCheck() 
   "TODO : how to display several informative messages, without a prompt for
   "pressing <ENTER> ?
-  "echo "Spell check in progress..."
+  echo "Spell check in progress..."
   syn case match
   let @_=s:SpellCheckLanguage()
   silent update
@@ -342,7 +334,9 @@ function! s:SpellCheck()
   call s:SpellContextMapping()
   syn cluster Spell contains=SpellErrors,SpellCorrected,SpellFlyErrors
   " TODO : show stats about spell check ?
-  "echo "Spell check done."
+  echo "Spell check done."
+  " Trick to avoid the "Press RETURN ..." prompt -- not perfect...
+  exe "0 append"
 endfunction
 
 " Function: s:SpellCheckWindow() {{{2
@@ -434,7 +428,7 @@ endfunction
 " add keyword under cursor to local dictionnary, keeping case.
 function! s:SpellCaseAccept() 
   call s:SpellSaveIskeyword()
-  let @_=system("echo \\\*".substitute(expand("<cword>"),"'","\\\\\'","")." \| ". b:spell_executable . b:spell_options . " -a -d ".b:spell_language)
+  let @_=system('(echo "*'.substitute(expand("<cword>"),"'","\\\\\'","").'"; echo "#") | '. b:spell_executable . b:spell_options . " -a -d ".b:spell_language)
   syntax case match
   execute "syntax match SpellCorrected \"\\<".escape(expand("<cword>"),"'")."\\>\" transparent contains=NONE ".b:spell_no_spelled
   call s:SpellLoadIskeyword()
@@ -444,7 +438,7 @@ endfunction
 " add lowercased keyword under cursor to local dictionnary
 function! s:SpellAccept() 
   call s:SpellSaveIskeyword()
-  let @_=system("echo \\\&".substitute(expand("<cword>"),"'","\\\\\'","")." \| ". b:spell_executable . b:spell_options . " -a -d ".b:spell_language)
+  let @_=system('(echo "&'.substitute(expand("<cword>"),"'","\\\\\'","").'";echo "#") | '. b:spell_executable . b:spell_options . " -a -d ".b:spell_language)
   syntax case ignore
   execute "syntax match SpellCorrected \"\\<".escape(expand("<cword>"),"'")."\\>\" transparent contains=NONE ".b:spell_no_spelled
   call s:SpellLoadIskeyword()
