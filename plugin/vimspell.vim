@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.68 2003/09/08 15:29:03 clabaut Exp $
+"$Id: vimspell.vim,v 1.70 2003/11/19 16:15:32 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell or aspell to highlight spelling errors on the
@@ -8,7 +8,7 @@
 " Maintainer:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Url:		    http://www.vim.org/scripts/script.php?script_id=465
 "
-" Last Change:	    04-Sep-2003.
+" Last Change:	    19-Nov-2003.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -34,6 +34,8 @@
 "		      the fly spell checking in insert mode.
 "		    Guo-Peng Wen for several patches, improvements and code
 "		      cleaning.
+"		    Hari Krishna Dara who shows me how to map a key which 
+"		      calls a function without leaving the insert mode.
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 "
 " Section: Documentation 
@@ -210,6 +212,8 @@ function! s:SpellRemoveMappings()
     exe "unmap <silent> <buffer> *".counter
     let counter=counter+1
   endwhile
+  map <silent> <buffer> <esc> p
+  map <silent> <buffer> r p
   unmap <silent> <buffer> <esc>
   unmap <silent> <buffer> r
 endfunction
@@ -248,32 +252,49 @@ function! s:SpellContextMapping()
 	\ . " :let @_=<SID>SpellAutoDisable()<CR>"
   execute "map <silent> <buffer> "
 	\ . s:SpellGetOption("spell_next_error_map","<Leader>sn")
-	\ . " :call <SID>SpellNextError()<cr>"
+	\ . " :call <SID>SpellNextError(1)<cr>"
 	"\ . ' /\<\(' . escape(b:spellerrors, "\\") . '\)\><cr>'
   execute "map <silent> <buffer> "
 	\ . s:SpellGetOption("spell_previous_error_map","<Leader>sp")
-	\ . " :call <SID>SpellPreviousError()<cr>"
-	"\ . ' ?\<\(' . escape(b:spellerrors, "\\") . '\)\><cr>'
+	\ . " :call <SID>SpellNextError(0)<cr>"
 endfunction
 
 " Function: s:SpellNextError() {{{2
-" search next word with spelling error.
-function! s:SpellNextError() 
+" search next word with spelling error (way = 1 : next, way = 0 : previous)
+function! s:SpellNextError(way) 
   let l:save_hls = &l:hlsearch
   setlocal nohlsearch
-  "echo '/\<\(' . b:spellerrors. '\)\>'
-  call search('\<\(' . b:spellerrors. '\)\>')
+  " save position
+  let l:cursorPosition = line(".") . "normal!" . virtcol(".") . "|"
+  let l:HLName = ""
+  let l:found = -1
+  let l:found_col = 0
+  let l:first_found = 0
+  let l:first_found_col = 0
+  " use line and column info to prevent infinite loop
+  while(l:found 
+	\ && (l:found != l:first_found  || l:first_found_col != l:found_col) 
+	\ && l:HLName != "SpellErrors")
+    if l:first_found == 0 && l:found != -1
+      let l:first_found = l:found
+      let l:first_found_col = l:found_col
+    endif
+    if a:way 
+      let l:found = search('\<\(' . b:spellerrors. '\)\>')
+    else
+      let l:found = search('\<\(' . b:spellerrors. '\)\>', 'b')
+    endif
+    let l:found_col = col(".")
+    let l:HLName = 
+      \ synIDattr(synIDtrans(synID(l:found, l:found_col, 1)), "name")
+  endwhile
+  if l:HLName != "SpellErrors"
+    exe l:cursorPosition
+  endif
+  "echomsg l:found . " " . l:first_found . " ". l:found_col . " " . l:first_found_col . " ".l:HLName
   let &l:hlsearch=l:save_hls
 endfunction
 
-" Function: s:SpellPreviousError() {{{2
-" search previous word with spelling error.
-function! s:SpellPreviousError() 
-  let l:save_hls = &l:hlsearch
-  setlocal nohlsearch
-  call search('\<\(' . b:spellerrors. '\)\>','b')
-  let &l:hlsearch=l:save_hls
-endfunction
 
 " Function: s:SpellSaveIskeyword() {{{2
 " save keyword definition, and add language specific keyword. Called when
@@ -326,7 +347,7 @@ endfunction
 " Function: s:SpellCaseAccept() {{{2
 " add keyword under cursor to local dictionary, keeping case.
 function! s:SpellCaseAccept()
-  let @_=system('(echo "*'.escape(expand("<cword>"),'\"'). '"; echo "\043") | '
+  let @_=system('(echo "*'.escape(expand("<cword>"),'\"'). '"; echo "#") | '
 	\ . b:spell_executable . b:spell_options
 	\ . " -a -d ".b:spell_language)
   if exists("b:spellcorrected")
@@ -344,7 +365,7 @@ endfunction
 " Function: s:SpellAccept() {{{2
 " add lowercased keyword under cursor to local dictionary
 function! s:SpellAccept()
-  let @_=system('(echo "&'.escape(expand("<cword>"),'\"') . '";echo "\043") | '
+  let @_=system('(echo "&'.escape(expand("<cword>"),'\"') . '";echo "#") | '
 	\ . b:spell_executable . b:spell_options
 	\ . " -a -d ".b:spell_language)
   if exists("b:spellicorrected")
@@ -522,6 +543,20 @@ function! s:SpellTuneCommentSyntax()
     syn cluster otlGroup		add=SpellErrors,SpellCorrected
     let b:spell_syntax_options = "contained"
   endif
+
+  " attempt to infer spellcheck use - is the Spell cluster included 
+  " somewhere ?  " (piece of code directly taken from the very good
+  " engspchk.vim) 
+  let keep_rega= @a
+  redir @a
+  silent syn
+  redir END
+  if match(@a,"@Spell") != -1
+    syn cluster Spell                add=SpellErrors,SpellCorrected
+    let b:spell_syntax_options = "contained"
+  endif
+  let @a= keep_rega
+
 endfunction
 
 " Function: s:SpellSetupBuffer() {{{2
@@ -932,7 +967,7 @@ function! s:SpellCheckLine()
   " or if there is a one character word (use -3 instead of -2, to prevent
   " <C-O> side effect, which move cursor on the last chars. see :h i_CTRL-O
   if  getline(line("."))[col(".") - 3] !~ '\w'
-    return
+    return ""
   endif
 
   " Make sure spelling check environment is correctly setup before we proceed:
@@ -989,6 +1024,7 @@ function! s:SpellCheckLine()
 	\ . "\\)\\>\" transparent contains=NONE ".b:spell_syntax_options
 
   call s:SpellContextMapping()
+  return ""
 
   "syntax cluster Spell contains=SpellErrors,SpellCorrected
 endfunction
@@ -1034,16 +1070,17 @@ function! s:SpellAutoEnable()
     if maparg('<Space>','i') != ""
       echomsg "vimspell:<space> already mapped. Overriding previously defined map."
       "let l:rhs='<cr>\|'.maparg('<space>','i')
-      silent "iunmap <buffer> <space>"
-      silent "iunmap <space>"
+      silent! "iunmap <buffer> <space>"
+      silent! "iunmap <space>"
     endif
-    "echomsg 'inoremap <buffer><silent> <Space> <Space><C-O>:SpellCheckLine'. l:rhs
-    " try Carl mueller patch to prevent wrong line breaks.
-    " Ne marche pas dans tous les cas... génant !
-    "exec 'inoremap <buffer><silent> <Space> <Space><cr><esc>kgqgqA<del><C-O>:SpellCheckLine<cr>'
-    exec 'inoremap <buffer><silent> <Space> <Space><C-O>:SpellCheckLine<cr>'
+    " Many, many thanks to Hari Krishna Dara who shows me how to map a
+    " function call without leaving insert mode !
+    exec 'inoremap <buffer><silent> <Space> <Space><C-R>=<SID>SpellCheckLine()<cr>'
     if maparg('.','i') == ""
-      exec 'inoremap <buffer><silent> . .<C-O>:SpellCheckLine<cr>'
+      exec 'inoremap <buffer><silent> . .<C-R>=<SID>SpellCheckLine()<cr>'
+    endif
+    if maparg('<CR>','i') == ""
+      exec 'inoremap <buffer><silent> <CR> <CR><C-R>=<SID>SpellCheckLine()<cr>'
     endif
   endif
 endfunction
@@ -1075,7 +1112,9 @@ function! s:SpellAutoDisable()
     exe "amenu <silent> disable ".s:menu."Spell.No\\ auto"
   endif
   if s:SpellGetOption("spell_insert_mode",1)
-    silent iunmap <buffer> <space>
+    silent! iunmap <buffer> <space>
+    silent! iunmap <buffer> .
+    silent! iunmap <buffer> <CR>
   endif
 endfunction
 
@@ -1115,7 +1154,7 @@ function! s:SpellSetSpellchecker(prog)
   let b:spell_internal_language_list = b:spell_internal_language_list.","
     " Init language menu
   if s:enable_menu
-    exe "aunmenu <silent> ".s:menu."Spell.Language"
+    exec "aunmenu <silent> ".s:menu."Spell.Language"
   endif
   let l:mlang=substitute(b:spell_internal_language_list,",.*","","")
   while matchstr(l:mlang,",") == ""
@@ -1188,6 +1227,12 @@ function! s:SpellSetLanguage(language)
     return
   endif
 
+  "create menu if a new language was requested.
+  if match(b:spell_internal_language_list, '\<'.a:language.'\>') < 0
+    exec "amenu <silent> ".s:prio."50 ".s:menu."Spell.&Language.".a:language
+	  \ . "  :SpellSetLanguage ".a:language."<cr>"
+  endif
+
   if s:enable_menu
     exec "amenu <silent> enable ".s:menu."Spell.Language.".b:spell_language
   endif
@@ -1209,7 +1254,7 @@ endfunction
 " Function: s:SpellExit() {{{2
 " remove syntax highlighting and mapping defined for spell checking.
 function! s:SpellExit()
-  silent "unmap <silent> <buffer> "
+  silent! "unmap <silent> <buffer> "
 	\ . s:SpellGetOption("spell_case_accept_map","<Leader>si")
   silent "unmap <silent> <buffer> "
 	\ . s:SpellGetOption("spell_accept_map","<Leader>su")
@@ -1325,9 +1370,9 @@ if s:enable_menu
   exe "amenu <silent> ".s:prio."200 ".s:menu
         \ . "Spell.-Sep3-                           :"
   exe "amenu <silent> ".s:prio."210 ".s:menu
-        \ . "Spell.&Previous\\ error<tab>".s:sp."                :call <SID>SpellPreviousError()<cr>"
+        \ . "Spell.&Previous\\ error<tab>".s:sp."                :call <SID>SpellNextError(0)<cr>"
   exe "amenu <silent> ".s:prio."220 ".s:menu
-        \ . "Spell.N&ext\\ error<tab>".s:sn."                    :call <SID>SpellNextError()<cr>"
+        \ . "Spell.N&ext\\ error<tab>".s:sn."                    :call <SID>SpellNextError(1)<cr>"
   exe "amenu <silent> ".s:prio."230 ".s:menu
         \ . "Spell.&Ignore<tab>".s:sa."                          :call <SID>SpellIgnore()<cr>"
   exe "amenu <silent> ".s:prio."235  ".s:menu
@@ -1342,7 +1387,7 @@ endif
 " Section: Doc installation {{{1
 "
   let s:revision=
-	\ substitute("$Revision: 1.68 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\ substitute("$Revision: 1.70 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! let s:install_status =
       \ s:SpellInstallDocumentation(expand('<sfile>:p'), s:revision)
   if (s:install_status == 1)
@@ -1462,8 +1507,8 @@ CONTENT                                                    *vimspell-contents*
    <Leader>sl   - switch between languages.
    <Leader>sn   - go to next error.
    <Leader>sp   - go to previous error.
-   <Leader>si   - insert word under cursor into directory.
-   <Leader>su   - insert word under cursor as lowercase into directory.
+   <Leader>si   - insert word under cursor into user dictionary.
+   <Leader>su   - insert word under cursor as lowercase into user dictionary.
    <Leader>sa   - accept word for this session only.
    <Leader>s?   - check for alternatives.
    <RightMouse> - open a popup menu with alternartives (see |vimspell-popup|).
@@ -1810,6 +1855,9 @@ CONTENT                                                    *vimspell-contents*
 ==============================================================================
 7. Vimspell TODO list  {{{2                                    *vimspell-todo*
 
+    - Use getchar() or something similar instead of mapping on
+      SpellProposeAlternatives function. That way, there is no need to unmap
+      .umber keys (which can be tricky).
     - Add options to prevent some words to be checked (like TODO). If not,
       their highlighting is overwritten by spellcheck's one (depends of TODO
       highlighting definition... To be investigated).
