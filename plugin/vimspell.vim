@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.67 2003/07/30 08:27:35 clabaut Exp $
+"$Id: vimspell.vim,v 1.68 2003/09/08 15:29:03 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell or aspell to highlight spelling errors on the
@@ -8,7 +8,7 @@
 " Maintainer:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Url:		    http://www.vim.org/scripts/script.php?script_id=465
 "
-" Last Change:	    03-Aug-2003.
+" Last Change:	    04-Sep-2003.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -114,7 +114,7 @@ endif
 function! s:SpellMenuAlternatives()
   call s:SpellCheckLanguage()
 
-  let l:alternatives=system("echo \"".escape(expand("<cword>"),'"')."\" | "
+  let l:alternatives=system("echo \"".escape(expand("<cword>"),'\"')."\" | "
 	\ . b:spell_executable . b:spell_options . " -a -d ".b:spell_language)
 
     " add \n, that the next substitute works
@@ -156,7 +156,7 @@ endfunction
 function! s:SpellProposeAlternatives()
   call s:SpellCheckLanguage()
 
-  let l:alternatives=system("echo \"".escape(expand("<cword>"),'"')."\" | "
+  let l:alternatives=system("echo \"".escape(expand("<cword>"),'\"')."\" | "
 	\ . b:spell_executable . b:spell_options . " -a -d ".b:spell_language)
 
     " add \n, that the next substitute works
@@ -204,14 +204,14 @@ endfunction
 function! s:SpellRemoveMappings()
   let counter=0
   while counter<10
-    silent "map <silent> <buffer> ".counter." x"
-    silent "map <silent> <buffer> *".counter." x"
-    silent "unmap <silent> <buffer> ".counter
-    silent "unmap <silent> <buffer> *".counter
+    exe "map <silent> <buffer> ".counter." x"
+    exe "map <silent> <buffer> *".counter." x"
+    exe "unmap <silent> <buffer> ".counter
+    exe "unmap <silent> <buffer> *".counter
     let counter=counter+1
   endwhile
-  silent "unmap <silent> <buffer> <esc>"
-  silent "unmap <silent> <buffer> r"
+  unmap <silent> <buffer> <esc>
+  unmap <silent> <buffer> r
 endfunction
 
 
@@ -296,8 +296,9 @@ function! s:SpellSaveIskeyword()
     endif
   endif
   let w:iskeyword=&l:iskeyword
-  execute "setlocal iskeyword-=".l:ik_options." iskeyword+=". l:ik_options
-  "let &iskeyword=w:iskeyword.l:ik_options
+  if (l:ik_options != "")
+    execute "setlocal iskeyword-=".l:ik_options." iskeyword+=". l:ik_options
+  endif
 endfunction
 
 
@@ -325,7 +326,7 @@ endfunction
 " Function: s:SpellCaseAccept() {{{2
 " add keyword under cursor to local dictionary, keeping case.
 function! s:SpellCaseAccept()
-  let @_=system('(echo "*'.escape(expand("<cword>"),'"'). '"; echo "\043") | '
+  let @_=system('(echo "*'.escape(expand("<cword>"),'\"'). '"; echo "\043") | '
 	\ . b:spell_executable . b:spell_options
 	\ . " -a -d ".b:spell_language)
   if exists("b:spellcorrected")
@@ -343,7 +344,7 @@ endfunction
 " Function: s:SpellAccept() {{{2
 " add lowercased keyword under cursor to local dictionary
 function! s:SpellAccept()
-  let @_=system('(echo "&'.escape(expand("<cword>"),'"') . '";echo "\043") | '
+  let @_=system('(echo "&'.escape(expand("<cword>"),'\"') . '";echo "\043") | '
 	\ . b:spell_executable . b:spell_options
 	\ . " -a -d ".b:spell_language)
   if exists("b:spellicorrected")
@@ -569,11 +570,11 @@ function! s:SpellSetupBuffer()
       \"tex,mail,text,html,sgml,otl,cvs,none")
   if !exists("b:spell_auto_enable") 
 	\ && ( (strlen(&filetype)
-		\ && (match(b:spell_auto_type,&filetype) >= 0
-		  \ ||match(b:spell_auto_type, "all") >=0 )
+		\ && (match(b:spell_auto_type,'\<'.&filetype.'\>') >= 0
+		  \ ||match(b:spell_auto_type, '\<all\>') >=0 )
 	      \ )
 	  \ || (!strlen(&filetype)
-		\ && match(b:spell_auto_type, "none") >=0 )
+		\ && match(b:spell_auto_type, '\<none\>') >=0 )
 	  \ )
     call s:SpellAutoEnable()
   else
@@ -928,7 +929,9 @@ endfunction
 "
 function! s:SpellCheckLine()
   " return if there is not a word character before the cursor
-  if  getline(line("."))[col(".") - 2] !~ '\w'
+  " or if there is a one character word (use -3 instead of -2, to prevent
+  " <C-O> side effect, which move cursor on the last chars. see :h i_CTRL-O
+  if  getline(line("."))[col(".") - 3] !~ '\w'
     return
   endif
 
@@ -953,7 +956,7 @@ function! s:SpellCheckLine()
     let b:spellicorrected="nonexisitingwordinthisdociumnt"
   endif
 
-  let l:ispexpr = "echo \"".escape(getline('.'),'"')."\"|".b:spell_filter_pipe
+  let l:ispexpr = "echo \"".escape(getline('.'),'\"')."\"|".b:spell_filter_pipe
 	\ . b:spell_executable . b:spell_options . ' -l -d '.b:spell_language
   let l:errors=system(l:ispexpr)
   let l:errors=escape(l:errors,'"')
@@ -1035,6 +1038,9 @@ function! s:SpellAutoEnable()
       silent "iunmap <space>"
     endif
     "echomsg 'inoremap <buffer><silent> <Space> <Space><C-O>:SpellCheckLine'. l:rhs
+    " try Carl mueller patch to prevent wrong line breaks.
+    " Ne marche pas dans tous les cas... génant !
+    "exec 'inoremap <buffer><silent> <Space> <Space><cr><esc>kgqgqA<del><C-O>:SpellCheckLine<cr>'
     exec 'inoremap <buffer><silent> <Space> <Space><C-O>:SpellCheckLine<cr>'
     if maparg('.','i') == ""
       exec 'inoremap <buffer><silent> . .<C-O>:SpellCheckLine<cr>'
@@ -1270,9 +1276,6 @@ endif
 
 if &mousemodel =~ 'popup'
   amenu <silent> 1.8 PopUp.-SEPx- <nop>
-  " Strange popup menu priority. Force it to 1.15  !!!
-  aunmenu PopUp.Annuler
-  amenu <silent> 1.15 PopUp.&Annuler u
   nnoremap <silent> <RightMouse> <LeftMouse>:SpellMenuAlternatives<cr><RightMouse>
 endif
 
@@ -1292,13 +1295,16 @@ if s:enable_menu
     let s:ml="\\"
   endif
   let s:sq=substitute(s:SpellGetOption("spell_exit_map","<Leader>sq"), '<Leader>', s:ml, "") 
+  let s:sp=substitute(s:SpellGetOption("spell_previous_error_map","<Leader>sp"), '<Leader>', s:ml, "") 
+  let s:sn=substitute(s:SpellGetOption("spell_next_error_map","<Leader>sn"), '<Leader>', s:ml, "") 
+  let s:sa=substitute(s:SpellGetOption("spell_ignore_map","<Leader>sa"), '<Leader>', s:ml, "") 
+  let s:su=substitute(s:SpellGetOption("spell_accept_map","<Leader>su"), '<Leader>', s:ml, "") 
+  let s:si=substitute(s:SpellGetOption("spell_case_accept_map","<Leader>si"), '<Leader>', s:ml, "") 
 
   exe "amenu <silent> ".s:prio."10  ".s:menu
 	\ . "Spell.&Spell       <Plug>SpellCheck"
   exe "amenu <silent> ".s:prio."15  ".s:menu
 	\ . "Spell.&Off         <Plug>SpellExit"
-  exe "amenu <silent> ".s:prio."20  ".s:menu
-	\ . "Spell.&Alternative <Plug>SpellProposeAlternatives"
   exe "amenu <silent> ".s:prio."30  ".s:menu
 	\ . "Spell.&Language.Next\ one <Plug>SpellChangeLanguage"
   exe "amenu <silent> ".s:prio."    ".s:menu
@@ -1316,13 +1322,27 @@ if s:enable_menu
   exe "amenu <silent> ".s:prio."102 ".s:menu
 	\ . "Spell.ispell :SpellSetSpellchecker ispell<CR>"
   exe "amenu <silent> disable ".s:menu."Spell.No\\ auto"
+  exe "amenu <silent> ".s:prio."200 ".s:menu
+        \ . "Spell.-Sep3-                           :"
+  exe "amenu <silent> ".s:prio."210 ".s:menu
+        \ . "Spell.&Previous\\ error<tab>".s:sp."                :call <SID>SpellPreviousError()<cr>"
+  exe "amenu <silent> ".s:prio."220 ".s:menu
+        \ . "Spell.N&ext\\ error<tab>".s:sn."                    :call <SID>SpellNextError()<cr>"
+  exe "amenu <silent> ".s:prio."230 ".s:menu
+        \ . "Spell.&Ignore<tab>".s:sa."                          :call <SID>SpellIgnore()<cr>"
+  exe "amenu <silent> ".s:prio."235  ".s:menu
+        \ . "Spell.&Alternative <Plug>SpellProposeAlternatives"
+  exe "amenu <silent> ".s:prio."240 ".s:menu
+        \ . "Spell.Insert\\ into\\ &dict\\.<tab>".s:si."         :call <SID>SpellCaseAccept()<cr>"
+  exe "amenu <silent> ".s:prio."250 ".s:menu
+        \ . "Spell.Insert\\ into\\ di&ct\\.\\ (lc)<tab>".s:su."  :call <SID>SpellAccept()<cr>"
 endif
 
 
 " Section: Doc installation {{{1
 "
   let s:revision=
-	\ substitute("$Revision: 1.66 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\ substitute("$Revision: 1.68 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! let s:install_status =
       \ s:SpellInstallDocumentation(expand('<sfile>:p'), s:revision)
   if (s:install_status == 1)
@@ -1370,7 +1390,7 @@ finish
 " Section: Documentation content                                          {{{1
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 === START_DOC
-*vimspell.txt*   For Vim version 6.1.                                #version#
+*vimspell.txt*   On the fly spell checker with ispell/aspell.        #version#
 
 
                         VIMSPELL REFERENCE MANUAL~
@@ -1446,7 +1466,7 @@ CONTENT                                                    *vimspell-contents*
    <Leader>su   - insert word under cursor as lowercase into directory.
    <Leader>sa   - accept word for this session only.
    <Leader>s?   - check for alternatives.
-   <RightMouse> - open a popup menu (see |vimspell-popup|).
+   <RightMouse> - open a popup menu with alternartives (see |vimspell-popup|).
 
    See |vimspell-mappings-override| and |vimspell-options| to learn how to
    override those default mappings.
@@ -1811,4 +1831,3 @@ CONTENT                                                    *vimspell-contents*
 " v im:tw=78:ts=8:ft=help:norl:
 " vim600: set foldmethod=marker  tabstop=8 shiftwidth=2 softtabstop=2 smartindent smarttab  :
 "fileencoding=iso-8859-15 
-
