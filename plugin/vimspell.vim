@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.25 2002/12/11 13:25:21 clabaut Exp $
+"$Id: vimspell.vim,v 1.26 2002/12/11 14:01:35 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell to highlight spelling errors on the fly, or on
@@ -611,7 +611,7 @@ function! s:SpellSetupBuffer()
     let b:spell_options=s:SpellGetOption("spell_options","") 
   endif
   let b:spell_options = " " . b:spell_options ." " .l:ft_options ." "
-  if match(s:SpellGetOption("spell_auto_type","tex,mail,text,html,sgml"),&filetype)
+  if match(s:SpellGetOption("spell_auto_type","tex,mail,text,html,sgml"),&filetype) >= 0
     call s:SpellAutoEnable()
   endif
 
