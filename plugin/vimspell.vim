@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.48 2003/04/29 12:20:56 clabaut Exp $
+"$Id: vimspell.vim,v 1.49 2003/05/06 09:38:20 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell to highlight spelling errors on the fly, or on
@@ -7,7 +7,7 @@
 " Original Author:  Claudio Fleiner <claudio@fleiner.com>
 " Url:		    http://www.vim.org/scripts/script.php?script_id=465
 "
-" Last Change:	    29-Apr-2003.
+" Last Change:	    06-May-2003.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -1081,8 +1081,8 @@ function! s:SpellCheckLine()
     let b:spellicorrected="nonexisitingwordinthisdociumnt"
   endif
 
-  let l:ispexpr = "echo '".getline('.')."'|".b:spell_filter.b:spell_executable
-	\ . b:spell_options . ' -l -d '.b:spell_language
+  let l:ispexpr = "echo \"".escape(getline('.'),'"')."\"|".b:spell_filter
+	\ . b:spell_executable . b:spell_options . ' -l -d '.b:spell_language
   let l:errors=system(l:ispexpr)
   let l:index=stridx(l:errors, "\n")
 
@@ -1163,7 +1163,9 @@ function! s:SpellAutoDisable()
   unlet! w:wtop
   exe "amenu <silent> enable ".s:menu."Spell.Auto"
   exe "amenu <silent> disable ".s:menu."Spell.No\\ auto"
-  iunmap <buffer> <Space>
+  if s:SpellGetOption("spell_insert_mode",1)
+    iunmap <buffer> <Space>
+  endif
 endfunction
 
 " Function: s:SpellSetSpellchecker(a:spellchecker) {{{2
@@ -1380,7 +1382,7 @@ exe "amenu <silent> disable ".s:menu."Spell.No\\ auto"
     endif
   endif
   let s:revision=
-	\substitute("$Revision: 1.48 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\substitute("$Revision: 1.49 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! call s:SpellInstallDocumentation(s:revision)
   if exists("s:help_doc")
     echo "vimspell v" . s:revision . ": Installed help-documentation."
@@ -1406,4 +1408,5 @@ exe "amenu <silent> disable ".s:menu."Spell.No\\ auto"
 " Section: Plugin completion {{{1
 let loaded_vimspell=2
 "}}}1
-" vim600: set foldmethod=marker fileencoding=iso-8859-15 tabstop=8 shiftwidth=2 softtabstop=2 smartindent smarttab  :
+" vim600: set foldmethod=marker  tabstop=8 shiftwidth=2 softtabstop=2 smartindent smarttab  :
+"fileencoding=iso-8859-15
