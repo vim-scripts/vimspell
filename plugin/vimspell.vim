@@ -1,11 +1,11 @@
-"$Id: vimspell.vim,v 1.28 2002/12/11 15:13:20 clabaut Exp $
+"$Id: vimspell.vim,v 1.30 2002/12/12 14:24:37 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell to highlight spelling errors on the fly, or on
 "		    demand. 
 " Author:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Original Author:  Claudio Fleiner <claudio@fleiner.com>
-" Last Change:	    11-Dec-2002.
+" Last Change:	    12-Dec-2002.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -147,6 +147,7 @@
 "     language names are the ones passed as an option to the spell checker.
 "     Defaults to the languages for which a dictionary is present, or if none
 "     can be found in the standard location, to  "english,francais"
+"     Note: The first language of this list is the one selected by default.
 "
 "   spell_options
 "     This variable, if set, defines additional options passed to the spell
@@ -172,6 +173,21 @@
 "   Note: variables are looked for in the following order : window dependant
 "   variables first, buffer dependant variables next and global ones last.
 "
+"   spell_root_menu
+"     This variable, if set, give the name of the menu in which the vimspell
+"     menu will be put. Defaults to "Plugin.". Note the termination dot.
+"     spell_root_menu_priority must be set accordingly. Set them both to "" if
+"     you want vimspell menu in the main menu bar.
+"
+"   spell_root_menu_priority
+"     This variable, if set, give the priority of the menu containing the
+"     vimspell menu. Defaults to "500." (quite on the right of the menu bar).
+"     Note the termination dot.
+"
+"   spell_menu_priority	
+"     This variable, if set, give the priority of the vimspell menu. Defaults
+"     to "10.". Note the termination dot.
+"     
 "
 " Function documentation: {{{2
 "----------------------------- 
@@ -463,16 +479,16 @@ function! s:SpellCheckLanguage()
   if !exists("b:spell_language")
     " take first language
     let b:spell_language=substitute(b:spell_internal_language_list,",.*","","")
-    exec "amenu <silent> disable Plugin.Spell.Language.".b:spell_language
+    exec "amenu <silent> disable ".s:menu."Spell.Language.".b:spell_language
   endif
 endfunction
 
 " Function: s:SpellSetLanguage(a:language) {{{2
 " Select a language
 function! s:SpellSetLanguage(language)
-  exec "amenu <silent> enable Plugin.Spell.Language.".b:spell_language
+  exec "amenu <silent> enable ".s:menu."Spell.Language.".b:spell_language
   let b:spell_language=a:language
-  exec "amenu <silent> disable Plugin.Spell.Language.".b:spell_language
+  exec "amenu <silent> disable ".s:menu."Spell.Language.".b:spell_language
   "TODO : some verification about arguments ?
   "force spell check
   let b:my_changedtick=0
@@ -487,17 +503,17 @@ function! s:SpellSetSpellchecker(prog)
     return
   endif
   if exists("b:spell_executable")
-    exec "amenu <silent> enable Plugin.Spell.".b:spell_executable
+    exec "amenu <silent> enable ".s:menu."Spell.".b:spell_executable
   endif
   let b:spell_executable=a:prog
-  exec "amenu <silent> disable Plugin.Spell.".b:spell_executable
+  exec "amenu <silent> disable ".s:menu."Spell.".b:spell_executable
   "get language list (spell checker dependant)
   let b:spell_internal_language_list=s:SpellGetDicoList().","
     " Init language menu
-  aunmenu <silent> Plugin.Spell.Language
+  exe "aunmenu <silent> ".s:menu."Spell.Language"
   let l:mlang=substitute(b:spell_internal_language_list,",.*","","")
   while matchstr(l:mlang,",") == "" 
-    exec "amenu <silent> 10.10.50 &Plugin.Spell.&Language.".l:mlang."  :SpellSetLanguage ".l:mlang."<cr>"
+    exec "amenu <silent> ".s:prio."50 ".s:menu."Spell.&Language.".l:mlang."  :SpellSetLanguage ".l:mlang."<cr>"
     " take next one
     let l:mlang=substitute(b:spell_internal_language_list,".*\\C" . l:mlang . ",\\([^,]\\+\\),.*","\\1","")
   endwhile
@@ -512,7 +528,7 @@ function! s:SpellChangeLanguage()
     " take first language
     let b:spell_language=substitute(b:spell_internal_language_list,",.*","","")
   else
-    exec "amenu <silent> enable Plugin.Spell.Language.".b:spell_language
+    exec "amenu <silent> enable ".s:menu."Spell.Language.".b:spell_language
     " take next one
     let l:res=substitute(b:spell_internal_language_list,".*\\C" . b:spell_language . ",\\([^,]\\+\\),.*","\\1","")
     if matchstr(l:res,",") != "" 
@@ -521,7 +537,7 @@ function! s:SpellChangeLanguage()
     endif
     let b:spell_language=l:res
   endif
-  exec "amenu <silent> disable Plugin.Spell.Language.".b:spell_language
+  exec "amenu <silent> disable ".s:menu."Spell.Language.".b:spell_language
   "force spell check
   let b:my_changedtick=0
   echo "Language: ".b:spell_language
@@ -531,8 +547,8 @@ endfunction
 " try to find a list of install dictionnaries
 function! s:SpellGetDicoList()
   let l:default = "english,francais"
-  let l:opt=s:SpellGetOption("spell_language_list", 0)
-  if l:opt != 0
+  let l:opt=s:SpellGetOption("spell_language_list", "")
+  if l:opt != ""
     " return user defined language list, if exists
     return l:opt
   endif
@@ -613,7 +629,11 @@ function! s:SpellSetupBuffer()
     let b:spell_options=s:SpellGetOption("spell_options","") 
   endif
   let b:spell_options = " " . b:spell_options ." " .l:ft_options ." "
-  if strlen(&filetype) && match(s:SpellGetOption("spell_auto_type","tex,mail,text,html,sgml"),&filetype) >= 0 
+  " set on-the-fly spell check, if filetype is set to a type in
+  " spell_auto_type variabele, and if nothing is known about
+  " b:spell_auto_enable (we do not want to re-enable spell checking on a
+  " buffer where it was previsously disabled.
+  if !exists("b:spell_auto_enable") &&  strlen(&filetype) && match(s:SpellGetOption("spell_auto_type","tex,mail,text,html,sgml"),&filetype) >= 0 
     call s:SpellAutoEnable()
   endif
 
@@ -638,8 +658,8 @@ function! s:SpellAutoEnable()
     execute "autocmd! BufWinLeave ". filename ." call s:SpellDeleteTemp()"
   augroup END
   call s:SpellCreateTemp()
-  amenu <silent> disable Plugin.Spell.Automatic
-  amenu <silent> enable Plugin.Spell.No\ auto
+  exe "amenu <silent> disable ".s:menu."Spell.Automatic"
+  exe "amenu <silent> enable ".s:menu."Spell.No\\ auto"
 endfunction
 
 " Function: s:SpellAutoDisable() {{{2
@@ -657,8 +677,8 @@ function! s:SpellAutoDisable()
   let  &updatetime=g:spell_old_update_time
   unlet! w:wtop
   call s:SpellExit()
-  amenu <silent> enable Plugin.Spell.Automatic
-  amenu <silent> disable Plugin.Spell.No\ auto
+  exe "amenu <silent> enable ".s:menu."Spell.Automatic"
+  exe "amenu <silent> disable ".s:menu."Spell.No\\ auto"
 endfunction
 
 " Section: Command definitions {{{1
@@ -695,17 +715,21 @@ endif
 
 
 " Section: Menu items {{{1
-amenu <silent> 10.10.10 &Plugin.Spell.&Spell       <Plug>SpellCheck
-amenu <silent> 10.10.15 &Plugin.Spell.&Off         <Plug>SpellExit
-amenu <silent> 10.10.20 &Plugin.Spell.&Alternative <Plug>SpellProposeAlternatives"
-amenu <silent> 10.10.30 &Plugin.Spell.&Language.Next\ one <Plug>SpellChangeLanguage
-amenu <silent>		&Plugin.Spell.&Language.-Sep-   :
-amenu <silent> 10.10.40 &Plugin.Spell.-Sep-		:
-amenu <silent> 10.10.45 &Plugin.Spell.A&utomatic <Plug>SpellAutoEnable
-amenu <silent> 10.10.50 &Plugin.Spell.&No\ auto  <Plug>SpellAutoDisable  
-amenu <silent> 10.10.100 &Plugin.Spell.-Sep2-	    :
-amenu <silent> 10.10.101 &Plugin.Spell.aspell :SpellSetSpellchecker aspell<CR>
-amenu <silent> 10.10.102 &Plugin.Spell.ispell :SpellSetSpellchecker ispell<CR>
+"
+let s:menu=s:SpellGetOption("spell_root_menu","Plugin.")
+let s:prio=s:SpellGetOption("spell_root_menu_priority","500.") . s:SpellGetOption("spell_menu_priority","10.")
+
+exe "amenu <silent> ".s:prio."10  ".s:menu."Spell.&Spell       <Plug>SpellCheck"
+exe "amenu <silent> ".s:prio."15  ".s:menu."Spell.&Off         <Plug>SpellExit"
+exe "amenu <silent> ".s:prio."20  ".s:menu."Spell.&Alternative <Plug>SpellProposeAlternatives"
+exe "amenu <silent> ".s:prio."30  ".s:menu."Spell.&Language.Next\ one <Plug>SpellChangeLanguage"
+exe "amenu <silent> ".s:prio."    ".s:menu."Spell.&Language.-Sep-   :"
+exe "amenu <silent> ".s:prio."40  ".s:menu."Spell.-Sep-		:"
+exe "amenu <silent> ".s:prio."45  ".s:menu."Spell.A&utomatic <Plug>SpellAutoEnable"
+exe "amenu <silent> ".s:prio."50  ".s:menu."Spell.&No\\ auto  <Plug>SpellAutoDisable  "
+exe "amenu <silent> ".s:prio."100 ".s:menu."Spell.-Sep2-	    :"
+exe "amenu <silent> ".s:prio."101 ".s:menu."Spell.aspell :SpellSetSpellchecker aspell<CR>"
+exe "amenu <silent> ".s:prio."102 ".s:menu."Spell.ispell :SpellSetSpellchecker ispell<CR>"
 
 " Section: Plugin init {{{1
 "
