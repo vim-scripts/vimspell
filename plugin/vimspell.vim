@@ -1,11 +1,11 @@
-"$Id: vimspell.vim,v 1.30 2002/12/12 14:24:37 clabaut Exp $
+"$Id: vimspell.vim,v 1.33 2003/01/06 11:15:00 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell to highlight spelling errors on the fly, or on
 "		    demand. 
 " Author:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Original Author:  Claudio Fleiner <claudio@fleiner.com>
-" Last Change:	    12-Dec-2002.
+" Last Change:	    06-Jan-2003.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -211,11 +211,14 @@
 " TODO list: {{{2
 "---------------- 
 "
-"   - BUG - errors did not get highlighted in other highlight groups (in
-"     comments for example). Need documentation, and/or overwriting of
-"     existings rules with addition of "contains SpellErrors".
+"   - BUG - spell check is not done in insert mode ? Why ?
+"   - Errors did not get highlighted in all other highlight groups (some work
+"     done in comments see SpellTuneCommentSyntax function). Need
+"     documentation. 
 "   - selection of syntax group for which spelling is done (for example, only
-"     string and comments are of interest in a C source code..)
+"     string and comments are of interest in a C source code..) - Partly done.
+"   - When only some syntax group get highlighted for spell errors, <Leader>sn
+"     and <Leader>sp don't work as expected.
 "   - reduce the number of external tools used. 
 "   - Ideally, errors resulting from on the fly spell checking should be added
 "     to a list of all errors (b:spellerrors and SpellErrors highlighting).
@@ -225,6 +228,9 @@
 "     "Spellcheck done: NNN words seem to be misspelled" (Peter Valach
 "     <pvalach@gmx.net>).
 "   - add popup menu for suggestion and replacement.
+"   - add a engspchk like driver ? (The way of using the whole dictionnary in
+"     syntax match seems usable, and provides a nicer on-the-fly spell
+"     checking).
 "   - ...
 "   - reduce this TODO list (I didn't think it would have grown so quickly).
 "
@@ -327,8 +333,8 @@ function! s:SpellContextMapping()
   execute "map <silent> <buffer> " . s:SpellGetOption("spell_accept_map","<Leader>su") . ":call <SID>SpellAccept()<cr><c-l>"
   execute "map <silent> <buffer> " . s:SpellGetOption("spell_ignore_map","<Leader>sa") . " :call <SID>SpellIgnore()<cr><c-l>"
   execute "map <silent> <buffer> " . s:SpellGetOption("spell_exit_map","<Leader>sq") . " :let @_=<SID>SpellExit()<CR>"
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_next_error_map","<Leader>sn") . ' /\<\(' . b:spellerrors . '\|' . b:spell_fly_errors . '\)\><cr>:nohl<cr>'
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_previous_error_map","<Leader>sp") . ' ?\<\(' . b:spellerrors . '\|' . b:spell_fly_errors . '\)\><cr>:nohl<cr>'
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_next_error_map","<Leader>sn") . ' /\<\(' . b:spellerrors . '\\|' . b:spell_fly_errors . '\)\><cr>:nohl<cr>'
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_previous_error_map","<Leader>sp") . ' ?\<\(' . b:spellerrors . '\\|' . b:spell_fly_errors . '\)\><cr>:nohl<cr>'
 endfunction                                        
                                                    
 " Function: s:SpellCheck() {{{2
@@ -338,6 +344,8 @@ function! s:SpellCheck()
   "TODO : how to display several informative messages, without a prompt for
   "pressing <ENTER> ?
   echo "Spell check in progress..."
+  " save position
+  let CursorPosition = line(".") . "normal!" . virtcol(".") . "|"
   syn case match
   let @_=s:SpellCheckLanguage()
   silent update
@@ -347,14 +355,15 @@ function! s:SpellCheck()
   if !exists("b:spell_fly_errors")
     let b:spell_fly_errors="nonexisitingwordinthisdociumnt"
   endif
-  let b:mappings=system(b:spell_filter . b:spell_executable . b:spell_options . " -l -d ".b:spell_language." < ".expand("%")." | sort -u | sed 's/\\(.*\\)/syntax match SpellErrors \"\\\\<\\1\\\\>\" ".b:spell_no_spelled."| let b:spellerrors=b:spellerrors.\"\\\\\\\\\\\\\\\\|\\1\"/'")
+  let b:mappings=system(b:spell_filter . b:spell_executable . b:spell_options . " -l -d ".b:spell_language." < ".expand("%")." | sort -u | sed 's/\\(.*\\)/syntax match SpellErrors \"\\\\<\\1\\\\>\" ".b:spell_syntax_options."| let b:spellerrors=b:spellerrors.\"\\\\\\\\\\\\\\\\|\\1\"/'")
   exe b:mappings
   call s:SpellContextMapping()
-  syn cluster Spell contains=SpellErrors,SpellCorrected,SpellFlyErrors
+  "syn cluster Spell contains=SpellErrors,SpellCorrected,SpellFlyErrors
   " TODO : show stats about spell check ?
+  exe CursorPosition
   echo "Spell check done."
   " Trick to avoid the "Press RETURN ..." prompt -- not perfect...
-  exe "0 append"
+  redraw
 endfunction
 
 " Function: s:SpellCheckWindow() {{{2
@@ -383,8 +392,10 @@ function! s:SpellCheckWindow()
   let b:my_changedtick = b:changedtick
   let w:wtop = wtop
   let w:wbottom = wbottom
+  let b:save_mod = &modified
   " save portion of buffer we are interested in .
   silent execute  ":".wtop .",".wbottom."w!".w:tempname
+  let &modified = b:save_mod
 
   " define mappings and syntax hilights for spelling errors
   syn case match
@@ -396,12 +407,12 @@ function! s:SpellCheckWindow()
     let b:spellerrors="nonexisitingwordinthisdociumnt"
   endif
 
-  let b:mappings=system(b:spell_filter . b:spell_executable . b:spell_options . " -l -d ".b:spell_language." < ".w:tempname." | sort -u | sed 's/\\(.*\\)/syntax match SpellFlyErrors \"\\\\<\\1\\\\>\" ".b:spell_no_spelled."| let b:spell_fly_errors=b:spell_fly_errors.\"\\\\\\\\\\\\\\\\|\\1\"/'")
+  let b:mappings=system(b:spell_filter . b:spell_executable . b:spell_options . " -l -d ".b:spell_language." < ".w:tempname." | sort -u | sed 's/\\(.*\\)/syntax match SpellFlyErrors \"\\\\<\\1\\\\>\" ".b:spell_syntax_options."| let b:spell_fly_errors=b:spell_fly_errors.\"\\\\\\\\\\\\\\\\|\\1\"/'")
 
   exe b:mappings
   call s:SpellContextMapping()
 
-  syntax cluster Spell contains=SpellErrors,SpellCorrected,SpellFlyErrors
+  "syntax cluster Spell contains=SpellErrors,SpellCorrected,SpellFlyErrors
 endfunction
 
 
@@ -448,7 +459,7 @@ function! s:SpellCaseAccept()
   call s:SpellSaveIskeyword()
   let @_=system('(echo "*'.substitute(expand("<cword>"),"'","\\\\\'","").'"; echo "#") | '. b:spell_executable . b:spell_options . " -a -d ".b:spell_language)
   syntax case match
-  execute "syntax match SpellCorrected \"\\<".escape(expand("<cword>"),"'")."\\>\" transparent contains=NONE ".b:spell_no_spelled
+  execute "syntax match SpellCorrected \"\\<".escape(expand("<cword>"),"'")."\\>\" transparent contains=NONE ".b:spell_syntax_options
   call s:SpellLoadIskeyword()
 endfunction
 
@@ -458,7 +469,7 @@ function! s:SpellAccept()
   call s:SpellSaveIskeyword()
   let @_=system('(echo "&'.substitute(expand("<cword>"),"'","\\\\\'","").'";echo "#") | '. b:spell_executable . b:spell_options . " -a -d ".b:spell_language)
   syntax case ignore
-  execute "syntax match SpellCorrected \"\\<".escape(expand("<cword>"),"'")."\\>\" transparent contains=NONE ".b:spell_no_spelled
+  execute "syntax match SpellCorrected \"\\<".escape(expand("<cword>"),"'")."\\>\" transparent contains=NONE ".b:spell_syntax_options
   call s:SpellLoadIskeyword()
 endfunction
 
@@ -467,14 +478,14 @@ endfunction
 function! s:SpellIgnore() 
   call s:SpellSaveIskeyword()
   syntax case match
-  execute "syntax match SpellCorrected \"\\<".expand("<cword>")."\\>\" transparent contains=NONE ".b:spell_no_spelled
+  execute "syntax match SpellCorrected \"\\<".expand("<cword>")."\\>\" transparent contains=NONE ".b:spell_syntax_options
   call s:SpellLoadIskeyword()
 endfunction
 
 " Function: s:SpellCheckLanguage() {{{2
 function! s:SpellCheckLanguage() 
-  if !exists("b:spell_no_spelled") 
-    let b:spell_no_spelled=""
+  if !exists("b:spell_syntax_options") 
+    let b:spell_syntax_options=""
   endif
   if !exists("b:spell_language")
     " take first language
@@ -606,6 +617,52 @@ function! s:SpellGetOption(name, default)
 endfunction
 
 
+" Function: s:SpellTuneCommentSyntax() {{{2
+" Add support to do spell checking inside comment. Idea from engspchk.vim from
+" Dr. Charles E. Campbell, Jr. <Charles.Campbell.1@gsfc.nasa.gov>.
+" This can be done only for those syntax files' comment blocks that
+" contains=@cluster.
+function! s:SpellTuneCommentSyntax()
+  let b:spell_syntax_options = ""
+  if     &ft == "amiga"
+    syn cluster amiCommentGroup		add=SpellErrors,SpellFlyErrors,SpellCorrected
+    let b:spell_syntax_options = "contained"
+  elseif &ft == "bib"
+    syn cluster bibVarContents     	contains=SpellErrors,SpellFlyErrors,SpellCorrected
+    syn cluster bibCommentContents 	contains=SpellErrors,SpellFlyErrors,SpellCorrected
+    let b:spell_syntax_options = "contained"
+  elseif &ft == "c" || &ft == "cpp"
+    syn cluster cCommentGroup		add=SpellErrors,SpellFlyErrors,SpellCorrected
+    let b:spell_syntax_options = "contained"
+  elseif &ft == "csh"
+    syn cluster cshCommentGroup		add=SpellErrors,SpellFlyErrors,SpellCorrected
+    let b:spell_syntax_options = "contained"
+  elseif &ft == "dcl"
+    syn cluster dclCommentGroup		add=SpellErrors,SpellFlyErrors,SpellCorrected
+    let b:spell_syntax_options = "contained"
+  elseif &ft == "fortran"
+    syn cluster fortranCommentGroup	add=SpellErrors,SpellFlyErrors,SpellCorrected
+    syn match   fortranGoodWord contained	"^[Cc]\>"
+    syn cluster fortranCommentGroup	add=fortranGoodWord
+    hi link fortranGoodWord fortranComment
+    let b:spell_syntax_options = "contained"
+  elseif &ft == "sh" || &ft == "ksh" || &ft == "bash"
+    syn cluster shCommentGroup		add=SpellErrors,SpellFlyErrors,SpellCorrected
+
+    let b:spell_syntax_options = "contained"
+  elseif &ft == "tex"
+    syn cluster texCommentGroup		add=SpellErrors,SpellFlyErrors,SpellCorrected
+
+    syn cluster texMatchGroup		add=SpellErrors,SpellFlyErrors,SpellCorrected
+
+  elseif &ft == "vim"
+    syn cluster vimCommentGroup		add=SpellErrors,SpellFlyErrors,SpellCorrected
+
+    let b:spell_syntax_options = "contained"
+  endif
+endfunction
+
+
 " Function: s:SpellSetupBuffer() {{{2
 " Initialize buffer dependants variables.
 
@@ -636,6 +693,8 @@ function! s:SpellSetupBuffer()
   if !exists("b:spell_auto_enable") &&  strlen(&filetype) && match(s:SpellGetOption("spell_auto_type","tex,mail,text,html,sgml"),&filetype) >= 0 
     call s:SpellAutoEnable()
   endif
+
+  call s:SpellTuneCommentSyntax()
 
 endfunction
 
