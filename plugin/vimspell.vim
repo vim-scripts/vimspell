@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.16 2002/11/27 10:08:55 clabaut Exp $
+"$Id: vimspell.vim,v 1.17 2002/11/27 16:22:31 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell to highlight spelling errors on the fly, or on
@@ -183,7 +183,7 @@ endfunction
 " Function: s:SpellReplace() {{{2
 " Replace word under cursor by the string given in parameter
 function! s:SpellReplace(s)
-  exe "normal gewcw".a:s."\<esc>"
+  exe "normal ciw".a:s."\<esc>"
   let r=s:SpellRemoveMappings()
 endfunction
 
