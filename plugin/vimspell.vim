@@ -1,11 +1,11 @@
-"$Id: vimspell.vim,v 1.22 2002/12/09 09:20:16 clabaut Exp $
+"$Id: vimspell.vim,v 1.23 2002/12/10 17:40:09 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell to highlight spelling errors on the fly, or on
 "		    demand. 
 " Author:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Original Author:  Claudio Fleiner <claudio@fleiner.com>
-" Last Change:	    08-Dec-2002.
+" Last Change:	    10-Dec-2002.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -31,7 +31,9 @@
 "
 "   Needs 'ispell', 'awk', 'sort' and 'sed' in order to work properly.
 "
-"   The default mappings are defined as follow:
+"   The default mappings are defined as follow (By default, <Leader> stands
+"   for '\'. Type :help leader for more info) :
+"
 "   <Leader>ss - write file, spellcheck file & highlight spelling mistakes
 "   <Leader>sl - switch between languages
 "   <Leader>sq - return to normal syntax coloring
@@ -44,6 +46,23 @@
 "
 "   See below for changing them.
 "
+"
+" Installation: {{{2
+"---------------------------- 
+"   Just copy this script in your ~/.vim/plugin/ directory.
+"
+"   By default, on-the-fly spell checking is disable. In order to activate it
+"   for a filetype, either redefine the spell_auto_type variable (see below)
+"   or put the following lines in the associated ftplugin file (for example in
+"   ~/.vim/ftplugin/tex.vim or ~/.vim/after/ftplugin/tex.vim). 
+"
+"    if exists("loaded_vimspell")
+"      :SpellAutoEnable
+"    endif
+"
+"   Be sure that the filetype is defined (type ":help new-filetype" if it
+"   doesn't work).
+"   
 "
 "
 " General configuration: {{{2
@@ -60,24 +79,6 @@
 "     highlight SpellErrors ctermfg=Red guifg=Red \
 "	cterm=underline gui=underline term=reverse
 "     
-" Function documentation: {{{2
-"----------------------------- 
-"   SpellAutoEnable
-"     Enable on-the-fly spell checking.
-"
-"   SpellAutoDisable
-"     Disable on-the-fly spell checking.
-"
-"   SpellChangeLanguage
-"     Select the next language available.
-"
-"   SpellSetLanguage
-"     Set the language to the one given as a parameter.
-"
-"   SpellSetSpellchecker
-"     Set the spell checker to the string given as a parameter (currently,
-"     aspell or ispell are supported).
-"
 "
 " Mapping documentation: {{{2
 "---------------------------- 
@@ -91,6 +92,7 @@
 "   <Leader>ss  SpellCheck
 "   <Leader>s?  SpellProposeAlternatives
 "   <Leader>sl	SpellChangeLanguage
+"
 "
 " Options documentation: {{{2
 "---------------------------- 
@@ -148,6 +150,15 @@
 "     This variable, if set, defines additional options passed to the spell
 "     checker executable.
 "
+"   spell_auto_type
+"     This variable, if set, defines a list of filetype for which spell check
+"     is done on the fly by default. Set it to "all" if you want on-the-fly
+"     spell check for every filetype. Defaults to "tex,mail,text,html,sgml".
+"
+"   spell_no_readonly
+"     This variable, if set, defines if read-only files are spell checked or
+"     not. Defaults to 1 (no spell check for read only files).
+"
 "   spell_{spellchecker}_{filetype}_args
 "     Those variables, if set, define the options passed to the "spellchecker"
 "     executable for the files of type "filetype". By default, theu are set
@@ -159,9 +170,32 @@
 "   Note: variables are looked for in the following order : window dependant
 "   variables first, buffer dependant variables next and global ones last.
 "
+"
+" Function documentation: {{{2
+"----------------------------- 
+"   SpellAutoEnable
+"     Enable on-the-fly spell checking.
+"
+"   SpellAutoDisable
+"     Disable on-the-fly spell checking.
+"
+"   SpellChangeLanguage
+"     Select the next language available.
+"
+"   SpellSetLanguage
+"     Set the language to the one given as a parameter.
+"
+"   SpellSetSpellchecker
+"     Set the spell checker to the string given as a parameter (currently,
+"     aspell or ispell are supported).
+"
+"
 " TODO list: {{{2
 "---------------- 
 "
+"   - BUG - errors did not get highlighted in other highlight groups (in
+"     comments for example). Need documentation, and/or overwriting of
+"     existings rules with addition of "contains SpellErrors".
 "   - BUG - problem with aspell (0.33.7-redhat 7.2) :
 "     the command :
 "	* new_word
@@ -170,14 +204,11 @@
 "       #
 "     Reported by Andrew McCarthy <andrewmc-vim@celt.dias.ie> who kindly
 "     corrected my english.
-"   - BUG - errors did not get highlighted in other highlight groups (in
-"     comments for example). Need documentation, and/or overwriting of
-"     existings rules with addition of "contains SpellErrors".
 "   - selection of syntax group for which spelling is done (for example, only
 "     string and comments are of interest in a C source code..)
 "   - reduce the number of external tools used. 
 "   - Ideally, errors resulting from on the fly spell checking should be added
-"     to a list of all errors (b;spellerrors and SpellErrors highlighting).
+"     to a list of all errors (b:spellerrors and SpellErrors highlighting).
 "     The problem is to keep a list of unique word, else the list will grown
 "     too fast... What is the quickiest way to do that ?
 "   - display a statusline like "Spellcheck in progress..." and perhaps
@@ -586,6 +617,9 @@ function! s:SpellSetupBuffer()
     let b:spell_options=s:SpellGetOption("spell_options","") 
   endif
   let b:spell_options = " " . b:spell_options ." " .l:ft_options ." "
+  if match(s:SpellGetOption("spell_auto_type","tex,mail,text,html,sgml"),&filetype)
+    call s:SpellAutoEnable()
+  endif
 
 endfunction
 
@@ -594,6 +628,13 @@ endfunction
 " Function: s:SpellAutoEnable() {{{2
 " Enable auto spelling.
 function! s:SpellAutoEnable()
+  if exists("b:spell_auto_enable")&& b:spell_auto_enable 
+    return
+  endif
+  if s:SpellGetOption("spell_no_readonly",1) && &readonly
+    return
+  endif
+  let b:spell_auto_enable = 1
   let filename=bufname(winbufnr(0))
   augroup spellchecker
     execute "autocmd! CursorHold ". filename ." call s:SpellCheckWindow()"
@@ -608,6 +649,10 @@ endfunction
 " Function: s:SpellAutoDisable() {{{2
 " Disable auto spelling
 function! s:SpellAutoDisable()
+  if !exists("b:spell_auto_enable") || b:spell_auto_enable == 0
+    return
+  endif
+  let b:spell_auto_enable = 0
   augroup spellchecker
     silent "autocmd! CursorHold ". filename 
     silent "autocmd! BufWinEnter ". filename 
