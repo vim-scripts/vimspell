@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.72 2004/04/19 12:53:51 clabaut Exp $
+"$Id: vimspell.vim,v 1.73 2004/04/19 13:45:52 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell or aspell to highlight spelling errors on the
@@ -170,12 +170,12 @@ function! s:SpellProposeAlternatives()
     " delete irrelevant begin of alternatives
   let l:alternatives=substitute(l:alternatives, "^.*: \\(.*\\)", "\\1, ", "")
 
-  let l:alterValue=""
+  let l:alterValue=","
   let l:alterNr=1
   let l:alter=""
   let l:index=stridx(l:alternatives, ", ")
 
-  while (l:index > 0 && l:alterNr <= 9)
+  while (l:index > 0 && l:alterNr <= 20)
     let l:oneAlter=strpart(l:alternatives, 0, l:index)
     let l:alternatives=strpart(l:alternatives, l:index+2)
     let l:index=stridx(l:alternatives, ", ")
@@ -189,7 +189,7 @@ function! s:SpellProposeAlternatives()
 
   if l:alter !=? ""
     echo "Checking ".expand("<cword>")
-	  \.": Type 0 for no change, r to replace, *<number> to replace all or"
+	  \.": Type 0 for no change, *<number> to replace all or :"
     exe l:alter
     echo ">"
     let c=getchar()
@@ -203,11 +203,22 @@ function! s:SpellProposeAlternatives()
       let c=nr2char(c)
       if c == '0'
 	return 0
-      elseif c == 'r'
-	normal "0gewcw"
       elseif '1' <= c && c <= '9'
-	let word=substitute(l:alterValue,'^.*'.c.': \([^,]\+\),.*', '\1','')
-	silent exe replace
+	if l:alterNr > 9
+	  let ch=c
+	  let c=getchar()
+	  let c=nr2char(c)
+	  if '1' <= c && c <= '9'
+	    let c=ch . c
+	  else
+	    let c=ch
+	  endif
+	endif
+	echomsg c."  ".ch."  ".l:alterValue
+	let word=substitute(l:alterValue,'^.*,'.c.': \([^,]\+\),.*', '\1','')
+	if word != l:alterValue
+	  silent exe replace
+	endif
 	redraw
       endif
     endif
@@ -1389,7 +1400,7 @@ endif
 " Section: Doc installation {{{1
 "
   let s:revision=
-	\ substitute("$Revision: 1.72 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\ substitute("$Revision: 1.73 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! let s:install_status =
       \ s:SpellInstallDocumentation(expand('<sfile>:p'), s:revision)
   if (s:install_status == 1)
@@ -1424,7 +1435,6 @@ endif
       au BufEnter * call s:SpellSetupBuffer()
     augroup END
   endif
-
 
 
 " Section: Plugin completion {{{1
