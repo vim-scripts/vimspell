@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.70 2003/11/19 16:15:32 clabaut Exp $
+"$Id: vimspell.vim,v 1.72 2004/04/19 12:53:51 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell or aspell to highlight spelling errors on the
@@ -8,7 +8,7 @@
 " Maintainer:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Url:		    http://www.vim.org/scripts/script.php?script_id=465
 "
-" Last Change:	    19-Nov-2003.
+" Last Change:	    19-Apr-2004.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -170,6 +170,7 @@ function! s:SpellProposeAlternatives()
     " delete irrelevant begin of alternatives
   let l:alternatives=substitute(l:alternatives, "^.*: \\(.*\\)", "\\1, ", "")
 
+  let l:alterValue=""
   let l:alterNr=1
   let l:alter=""
   let l:index=stridx(l:alternatives, ", ")
@@ -180,11 +181,8 @@ function! s:SpellProposeAlternatives()
     let l:index=stridx(l:alternatives, ", ")
     let l:oneAlter=escape(l:oneAlter,'"')
 
-    let alter=alter."map <silent> <buffer> ".l:alterNr
-	  \ . " :let r=<SID>SpellReplace(\"".l:oneAlter
-	  \ . "\")<CR> | map <silent> <buffer> *"
-	  \ . l:alterNr." :let r=<SID>SpellReplaceEverywhere(\"".l:oneAlter
-	  \ . "\")<CR> | echo \"".l:alterNr.": ".l:oneAlter."\" | "
+    let alter=alter."echo \"".l:alterNr.": ".l:oneAlter."\"|"
+    let l:alterValue=l:alterValue.l:alterNr.": ".l:oneAlter.","
 
     let l:alterNr=l:alterNr+1
   endwhile
@@ -193,29 +191,29 @@ function! s:SpellProposeAlternatives()
     echo "Checking ".expand("<cword>")
 	  \.": Type 0 for no change, r to replace, *<number> to replace all or"
     exe l:alter
-    map <silent> <buffer> 0 <cr>:let r=<SID>SpellRemoveMappings()<cr>
-    map <silent> <buffer> <esc> <cr>:let r=<SID>SpellRemoveMappings()<cr>
-    map <silent> <buffer> r 0gewcw
+    echo ">"
+    let c=getchar()
+    if nr2char(c) == '*'
+      let replace="call s:SpellReplaceEverywhere(word)"
+      let c=getchar()
+    else
+      let replace="call s:SpellReplace(word)"
+    endif
+    if c != 0
+      let c=nr2char(c)
+      if c == '0'
+	return 0
+      elseif c == 'r'
+	normal "0gewcw"
+      elseif '1' <= c && c <= '9'
+	let word=substitute(l:alterValue,'^.*'.c.': \([^,]\+\),.*', '\1','')
+	silent exe replace
+	redraw
+      endif
+    endif
   else
     echo "no alternatives"
   endif
-endfunction
-
-" Function: s:SpellRemoveMappings() {{{2
-" Remove mappings defined by SpellProposeAlternatives function.
-function! s:SpellRemoveMappings()
-  let counter=0
-  while counter<10
-    exe "map <silent> <buffer> ".counter." x"
-    exe "map <silent> <buffer> *".counter." x"
-    exe "unmap <silent> <buffer> ".counter
-    exe "unmap <silent> <buffer> *".counter
-    let counter=counter+1
-  endwhile
-  map <silent> <buffer> <esc> p
-  map <silent> <buffer> r p
-  unmap <silent> <buffer> <esc>
-  unmap <silent> <buffer> r
 endfunction
 
 
@@ -223,7 +221,6 @@ endfunction
 " Replace word under cursor by the string given in parameter
 function! s:SpellReplace(s)
   exe "normal ciw".a:s."\<esc>"
-  call s:SpellRemoveMappings()
 endfunction
 
 " Function: s:SpellReplaceEverywhere() {{{2
@@ -232,7 +229,6 @@ endfunction
 function! s:SpellReplaceEverywhere(s)
   exe ":%s/\\<".expand("<cword>")."\\>/".a:s."/g"
   normal 
-  call s:SpellRemoveMappings()
 endfunction
 
 " Function: s:SpellContextMapping() {{{2
@@ -357,6 +353,7 @@ function! s:SpellCaseAccept()
   endif
 
   syntax case match
+  syntax clear SpellCorrected 
   execute "syntax match SpellCorrected \"\\<\\(".b:spellcorrected
 	\ . "\\)\\>\" transparent contains=NONE ".b:spell_syntax_options
 endfunction
@@ -375,6 +372,7 @@ function! s:SpellAccept()
   endif
 
   syntax case ignore
+  syntax clear SpellCorrected 
   execute "syntax match SpellCorrected \"\\<\\(".b:spellicorrected
 	\ . "\\)\\>\" transparent contains=NONE ".b:spell_syntax_options
 endfunction
@@ -389,6 +387,7 @@ function! s:SpellIgnore()
     let  b:spellcorrected=escape(expand("<cword>"),"'\"")
   endif
   syntax case match
+  syntax clear SpellCorrected 
   execute "syntax match SpellCorrected \"\\<\\(".b:spellcorrected
 	\ . "\\)\\>\" transparent contains=NONE ".b:spell_syntax_options
 endfunction
@@ -527,6 +526,7 @@ function! s:SpellTuneCommentSyntax()
     let b:spell_syntax_options = "contained"
   elseif &l:ft == "xml"
     syn cluster xmlText		add=SpellErrors,SpellCorrected
+    syn cluster xmlString		add=SpellErrors,SpellCorrected
     syn cluster xmlRegionHook	add=SpellErrors,SpellCorrected
 
     let b:spell_syntax_options = "contained"
@@ -943,6 +943,7 @@ function! s:SpellCheckWindow()
 
   " install regex for syntax highlighting
   syntax case ignore
+  syntax clear SpellCorrected SpellErrors
   execute 'syntax match SpellCorrected "\<\('.b:spellicorrected
 	\ . '\)\>" transparent contains=NONE '.b:spell_syntax_options
   syntax case match
@@ -1015,6 +1016,7 @@ function! s:SpellCheckLine()
 
   " install regex for syntax highlighting
   syntax case ignore
+  syntax clear SpellCorrected SpellErrors
   execute "syntax match SpellCorrected \"\\<\\(".b:spellicorrected
 	\ . "\\)\\>\" transparent contains=NONE ".b:spell_syntax_options
   syntax case match
@@ -1387,7 +1389,7 @@ endif
 " Section: Doc installation {{{1
 "
   let s:revision=
-	\ substitute("$Revision: 1.70 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\ substitute("$Revision: 1.72 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! let s:install_status =
       \ s:SpellInstallDocumentation(expand('<sfile>:p'), s:revision)
   if (s:install_status == 1)
@@ -1589,7 +1591,7 @@ CONTENT                                                    *vimspell-contents*
     For instance, to override the default mapping for :SpellCheck to set it to
     \sc, add the following to the |vimrc|:
 >
-      nnoremap \sc <Plug>SpellCheck
+      nmap \sc <Plug>SpellCheck
 <
     The default global mappings are as follow:
 
@@ -1825,12 +1827,23 @@ CONTENT                                                    *vimspell-contents*
 ==============================================================================
 6. Vimspell bugs  {{{2                                         *vimspell-bugs*
 
+    I'm not able to reproduce most of those bug with last version of vim and
+    vimspell. If someone has more information about them, I will welcome them.
+
+    - Problem with "jumping" cursor :
+      Open a document in vim, wait for spell_update_time to let vimspell check
+      currently displayed part of document.  Then move cursor to last line
+      visible on screen (if your document has less lines than your screen,
+      move to last line of document ;), but don't scroll document down.  Wait
+      spell_update_time again.  Cursor should now jump to first line and first
+      column of the screen.  You should do this in command mode.
+    - Errors did not get highlighted in all other highlight groups (some work
+      done in comments see SpellTuneCommentSyntax function). Need
+      documentation.
     - problem when opening file with a swap files. Messages are not visibles.
       to be reproduced...
     - ispell doesn't seem to work with word containing iso-8559 encoded
       characters in TeX files...
-    - BUG with spell_insert_mode set, lines doesn't always break as they
-      should and <undo> doesn't work as expected....
     - BUG digraphs are not passed to aspell/ispell. Since iskeyword is set
       globally, they are not underlined in red.. In tex mode..
     - BUG reported by Fabio Stumbo <f.stumbo@unife.it>:
@@ -1855,17 +1868,18 @@ CONTENT                                                    *vimspell-contents*
 ==============================================================================
 7. Vimspell TODO list  {{{2                                    *vimspell-todo*
 
-    - Use getchar() or something similar instead of mapping on
-      SpellProposeAlternatives function. That way, there is no need to unmap
-      .umber keys (which can be tricky).
+    - optimize SpellSetupBuffer, which takes way too long time at each buffer
+      switching (It wasn't the case before... Strange).
+    - Add a way to customize the spell checking (so as to not use the syntax
+      highlighting as a way to determine was as to be checked). For example,
+      with the current syntax files, html and xml are badly checked.
+    - Add a language auto detection function.
+    - Change vimspell so that it works with csh (use of backslash_quote
+      variable) ?
+    - Add a command to spellcheck a visually selected region
     - Add options to prevent some words to be checked (like TODO). If not,
       their highlighting is overwritten by spellcheck's one (depends of TODO
       highlighting definition... To be investigated).
-    - Add actual (potentially user defined) shorcuts in menu (with <Leader>
-      replaced by its value).
-    - Errors did not get highlighted in all other highlight groups (some work
-      done in comments see SpellTuneCommentSyntax function). Need
-      documentation.
     - selection of syntax group for which spelling is done (for example, only
       string and comments are of interest in a C source code..) - Partly done.
     - When only some syntax group get highlighted for spell errors, <Leader>sn
