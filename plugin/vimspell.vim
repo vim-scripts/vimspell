@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.78 2004/04/20 08:43:18 clabaut Exp $
+"$Id: vimspell.vim,v 1.83 2004/04/21 15:07:14 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell or aspell to highlight spelling errors on the
@@ -8,7 +8,7 @@
 " Maintainer:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Url:		    http://www.vim.org/scripts/script.php?script_id=465
 "
-" Last Change:	    20-Apr-2004.
+" Last Change:	    21-Apr-2004.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -196,6 +196,8 @@ function! s:SpellProposeAlternatives()
     let l:alterNr=l:alterNr+1
   endwhile
 
+  let l:replaced=0
+
   if l:alter !=? ""
     echo "Checking ".expand("<cword>")
 	  \.": Type 0 for no change, *<number> to replace all or :"
@@ -226,12 +228,16 @@ function! s:SpellProposeAlternatives()
 	let word=substitute(l:alterValue,'^.*,'.c.': \([^,]\+\),.*', '\1','')
 	if word != l:alterValue
 	  silent exe replace
+	  let l:replaced=1
 	endif
 	redraw
       endif
     endif
   else
     echo "no alternatives"
+  endif
+  if l:replaced && b:spell_auto_jump 
+     call s:SpellNextError(1)
   endif
 endfunction
 
@@ -375,6 +381,9 @@ function! s:SpellCaseAccept()
   syntax clear SpellCorrected 
   execute "syntax match SpellCorrected \"\\<\\(".b:spellcorrected
 	\ . "\\)\\>\" transparent contains=NONE ".b:spell_syntax_options
+  if b:spell_auto_jump 
+     call s:SpellNextError(1)
+  endif
 endfunction
 
 
@@ -394,6 +403,9 @@ function! s:SpellAccept()
   syntax clear SpellCorrected 
   execute "syntax match SpellCorrected \"\\<\\(".b:spellicorrected
 	\ . "\\)\\>\" transparent contains=NONE ".b:spell_syntax_options
+  if b:spell_auto_jump 
+     call s:SpellNextError(1)
+  endif
 endfunction
 
 
@@ -409,6 +421,9 @@ function! s:SpellIgnore()
   syntax clear SpellCorrected 
   execute "syntax match SpellCorrected \"\\<\\(".b:spellcorrected
 	\ . "\\)\\>\" transparent contains=NONE ".b:spell_syntax_options
+  if b:spell_auto_jump 
+     call s:SpellNextError(1)
+  endif
 endfunction
 
 
@@ -554,69 +569,71 @@ endfunction
 " Dr. Charles E. Campbell, Jr. <Charles.Campbell.1@gsfc.nasa.gov>.
 " This can be done only for those syntax files' comment blocks that
 " contains=@cluster.
-function! s:SpellTuneCommentSyntax()
-  if !exists("b:spell_syntax_options")
-    let b:spell_syntax_options = ""
-    if     &l:ft == "amiga"
+function! s:SpellTuneCommentSyntax(ft)
+  if !exists("b:spell_syntax_ft") || b:spell_syntax_ft != a:ft
+    let b:spell_syntax_ft = a:ft
+    " Special treatment for filetype which do not use @Spell cluster.
+    if     a:ft == "amiga"
       syn cluster amiCommentGroup		add=SpellErrors,SpellCorrected
       " highlight only in comments (i.e. if SpellErrors are contained).
       let b:spell_syntax_options = "contained"
-    elseif &l:ft == "bib"
+    elseif a:ft == "bib"
       syn cluster bibVarContents     	contains=SpellErrors,SpellCorrected
       syn cluster bibCommentContents 	contains=SpellErrors,SpellCorrected
       let b:spell_syntax_options = "contained"
-    elseif &l:ft == "c" || &l:ft == "cpp"
+    elseif a:ft == "c" || a:ft == "cpp"
       syn cluster cCommentGroup		add=SpellErrors,SpellCorrected
       let b:spell_syntax_options = "contained"
-    elseif &l:ft == "csh"
+    elseif a:ft == "csh"
       syn cluster cshCommentGroup		add=SpellErrors,SpellCorrected
       let b:spell_syntax_options = "contained"
-    elseif &l:ft == "dcl"
+    elseif a:ft == "dcl"
       syn cluster dclCommentGroup		add=SpellErrors,SpellCorrected
       let b:spell_syntax_options = "contained"
-    elseif &l:ft == "fortran"
+    elseif a:ft == "fortran"
       syn cluster fortranCommentGroup	add=SpellErrors,SpellCorrected
       syn match   fortranGoodWord contained	"^[Cc]\>"
       syn cluster fortranCommentGroup	add=fortranGoodWord
       hi link fortranGoodWord fortranComment
       let b:spell_syntax_options = "contained"
-    elseif &l:ft == "sh" || &l:ft == "ksh" || &l:ft == "bash"
+    elseif a:ft == "sh" || a:ft == "ksh" || a:ft == "bash"
       syn cluster shCommentGroup		add=SpellErrors,SpellCorrected
-    elseif &l:ft == "b"
+    elseif a:ft == "b"
       syn cluster bCommentGroup		add=SpellErrors,SpellCorrected
       let b:spell_syntax_options = "contained"
-    elseif &l:ft == "xml"
+    elseif a:ft == "xml"
       syn cluster xmlText		add=SpellErrors,SpellCorrected
       syn cluster xmlString		add=SpellErrors,SpellCorrected
       syn cluster xmlRegionHook	add=SpellErrors,SpellCorrected
 
       let b:spell_syntax_options = "contained"
-    elseif &l:ft == "tex"
+    elseif a:ft == "tex"
       syn cluster texCommentGroup		add=SpellErrors,SpellCorrected
 
       syn cluster texMatchGroup		add=SpellErrors,SpellCorrected
 
-    elseif &l:ft == "vim"
+    elseif a:ft == "vim"
       syn cluster vimCommentGroup		add=SpellErrors,SpellCorrected
 
       let b:spell_syntax_options = "contained"
-    elseif &l:ft == "otl"
+    elseif a:ft == "otl"
       syn cluster otlGroup		add=SpellErrors,SpellCorrected
       let b:spell_syntax_options = "contained"
     endif
 
-    " attempt to infer spellcheck use - is the Spell cluster included 
-    " somewhere ?  " (piece of code directly taken from the very good
-    " engspchk.vim) 
-    let keep_rega= @a
-    redir @a
-    silent syn
-    redir END
-    if match(@a,"@Spell") != -1
-      syn cluster Spell                add=SpellErrors,SpellCorrected
+    " @Spell cluster must be defined in new syntax files
+    syn cluster Spell                add=SpellErrors,SpellCorrected
+
+    " by default, only errors in Spell cluster are highlight
+    if !exists("b:spell_syntax_options")
       let b:spell_syntax_options = "contained"
     endif
-    let @a= keep_rega
+    "but not for markup languages, where spelling erros must be also 
+    "highlighted outside of the Spell cluster.
+    if stridx(s:SpellGetOption("spell_markup_ft",",html,php,xhtml,dtml,tex,"), 
+	  \ ",".a:ft.",") > -1
+      let b:spell_syntax_options = ""
+    endif
   endif
 
 endfunction
@@ -696,7 +713,7 @@ function! s:SpellSetupBuffer()
 
   call s:SpellCheckLanguage()
 
-  call s:SpellTuneCommentSyntax()
+  call s:SpellTuneCommentSyntax(&l:ft)
 
   call s:SpellSaveIskeyword()
 
@@ -710,6 +727,8 @@ function! s:SpellSetupBuffer()
       set backspace-=start backspace+=start
     endif
   endif
+
+  let b:spell_auto_jump = s:SpellGetOption("spell_auto_jump",1)
 
 endfunction
 
@@ -925,6 +944,7 @@ function! s:SpellCheck()
         \ .l:errorcount." words."
 endfunction
 
+
 " Function: s:SpellCheckWindow() {{{2
 " Spell check the text display on the window (+ some lines before and after)
 " *without* writing the buffer. Define highlighting and mapping for correction
@@ -965,6 +985,7 @@ function! s:SpellCheckWindow()
 
   " has something changed (buffer content or window position) ?
   if wtop == w:wtop && wbottom == w:wbottom && b:my_changedtick == b:changedtick
+    execute l:cursorPosition
     return
   endif
   let b:my_changedtick = b:changedtick
@@ -1068,7 +1089,7 @@ function! s:SpellCheckLine()
     let b:spellicorrected="nonexisitingwordinthisdociumnt"
   endif
 
-  let l:ispexpr = "echo \"".escape(getline('.'),'\"')."\"|".b:spell_filter_pipe
+  let l:ispexpr = "echo \"".escape(getline('.'),'\"<>')."\"|".b:spell_filter_pipe
 	\ . b:spell_executable . b:spell_options . ' -l -d '.b:spell_language
   let l:errors=system(l:ispexpr)
   let l:errors=escape(l:errors,'"')
@@ -1161,7 +1182,9 @@ function! s:SpellAutoEnable(guess)
       exec 'inoremap <buffer><silent> <CR> <CR><C-R>=<SID>SpellCheckLine()<cr>'
     endif
   endif
-  call s:SpellGuessLanguage()
+  if a:guess
+    call s:SpellGuessLanguage()
+  endif
 endfunction
 
 " Function: s:SpellAutoDisable() {{{2
@@ -1353,7 +1376,7 @@ function! s:SpellExit()
 endfunction
 
 " Section: Command definitions {{{1
-com! SpellAutoEnable call s:SpellAutoEnable()
+com! SpellAutoEnable call s:SpellAutoEnable(1)
 com! SpellAutoDisable call s:SpellAutoDisable()
 com! SpellCheck call s:SpellCheck()
 com! SpellExit call s:SpellExit()
@@ -1467,7 +1490,7 @@ endif
 " Section: Doc installation {{{1
 "
   let s:revision=
-	\ substitute("$Revision: 1.78 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\ substitute("$Revision: 1.83 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! let s:install_status =
       \ s:SpellInstallDocumentation(expand('<sfile>:p'), s:revision)
   if (s:install_status == 1)
@@ -1500,6 +1523,7 @@ endif
   if s:enable_autocommand
     augroup SpellCommandPlugin
       au BufEnter * call s:SpellSetupBuffer()
+      au FileType * call s:SpellTuneCommentSyntax(expand("<amatch>"))
     augroup END
   endif
 
@@ -1590,7 +1614,7 @@ CONTENT                                                    *vimspell-contents*
    <Leader>su   - insert word under cursor as lowercase into user dictionary.
    <Leader>sa   - accept word for this session only.
    <Leader>s?   - check for alternatives.
-   <RightMouse> - open a popup menu with alternartives (see |vimspell-popup|).
+   <RightMouse> - open a popup menu with alternatives (see |vimspell-popup|).
 
    See |vimspell-mappings-override| and |vimspell-options| to learn how to
    override those default mappings.
@@ -1759,7 +1783,7 @@ CONTENT                                                    *vimspell-contents*
       can be found in the standard location, to: >
  	  let spell_language_list = "english,francais"
 <     Note: The first language of this list is the one selected by default.
-      An empty list force vimspell to select dictionnaries installed for the
+      An empty list force vimspell to select dictionaries installed for the
       selected spell checker.
 
 
@@ -1806,7 +1830,7 @@ CONTENT                                                    *vimspell-contents*
     spell_insert_mode                                      *spell_insert_mode*
       This variable if set, set up a hack to allow spell checking in insert
       mode. This is normally not possible by mean of autocommands, but is
-      done with a map to the <Space> key. Each time that <Space> is hitted,
+      done with a map to the <Space> key. Each time that <Space> is hit,
       the current line is spell checked. This feature can slow down vim
       enough but is otherwise very nice.
       Note that the mapping is defined only when spell check is done on the
@@ -1822,6 +1846,25 @@ CONTENT                                                    *vimspell-contents*
  	  let spell_no_readonly = 1  "no spell check for read only files.
 <
 
+    spell_auto_jump		                             *spell_auto_jump*
+      This variable, if set, make the cursor automatically jump to the next 
+      error after: 
+       - inserting a word in the user dictionary, 
+       - accepting a word for the editing session,
+       - accepting a suggestion from the alternative list.
+      Defaults to: >
+	  let spell_auto_jump = 1
+<
+
+    spell_markup_ft                                          *spell_markup_ft*
+      This variable, if set, defines a list of filetype for which vimspell
+      highlights all errors, and not only those included in the @Spell cluster 
+      (see |syn-cluster|).
+      Defaults to: >
+	  let spell_markup_ft = ",html,php,xhtml,dtml,tex,"
+<     Note the beginning and ending commas.
+
+
     spell_{spellchecker}_{filetype}_args
                                *spell_spellchecker_args* *spell_filetype_args*
       Those variables, if set, define the options passed to the "spellchecker"
@@ -1835,7 +1878,7 @@ CONTENT                                                    *vimspell-contents*
     spell_{language}_iskeyword                               *spell_iskeyword*
       Those variables if set define the characters which are part of a word
       in the selected language. See |iskeyword| for more informations. 
-      Note that the hereafter described variables (the filetype dependant
+      Note that the hereafter described variables (the filetype dependent
       ones) overrides, if exists, the spell_{language}_iskeyword variables.
       The list must be empty or begin with a comma.
       The following is defined: >
@@ -1927,22 +1970,14 @@ CONTENT                                                    *vimspell-contents*
     I'm not able to reproduce most of those bug with last version of vim and
     vimspell. If someone has more information about them, I will welcome them.
 
-    - Problem with "jumping" cursor :
-      Open a document in vim, wait for spell_update_time to let vimspell check
-      currently displayed part of document.  Then move cursor to last line
-      visible on screen (if your document has less lines than your screen,
-      move to last line of document ;), but don't scroll document down.  Wait
-      spell_update_time again.  Cursor should now jump to first line and first
-      column of the screen.  You should do this in command mode.
-    - Errors did not get highlighted in all other highlight groups (some work
-      done in comments see SpellTuneCommentSyntax function). Need
-      documentation.
-    - problem when opening file with a swap files. Messages are not visibles.
+    - BUG digraphs are not passed to aspell/ispell. Since iskeyword is set
+      globally, they are not underlined in red... 
+    - When not all errors are highlighted, SpellCheck() display an erroneous 
+      error count.
+    - problem when opening file with a swap files. Messages are not visible.
       to be reproduced...
     - ispell doesn't seem to work with word containing iso-8559 encoded
       characters in TeX files...
-    - BUG digraphs are not passed to aspell/ispell. Since iskeyword is set
-      globally, they are not underlined in red.. In tex mode..
     - BUG reported by Fabio Stumbo <f.stumbo@unife.it>:
       Textual navigation in Plugin submenus doesn't work when pressing <F4>
       with the following .vimrc settings: >
@@ -1963,7 +1998,7 @@ CONTENT                                                    *vimspell-contents*
       autocomands are dangerous and difficult to test thoroughly).
 
 ==============================================================================
-7. Vimspell TODO list  {{{2                                    *vimspell-todo*
+7. Vimspell .TODO list  {{{2                                    *vimspell-todo*
 
     - Add a way to customize the spell checking (so as to not use the syntax
       highlighting as a way to determine was as to be checked). For example,
@@ -1976,8 +2011,6 @@ CONTENT                                                    *vimspell-contents*
       highlighting definition... To be investigated).
     - selection of syntax group for which spelling is done (for example, only
       string and comments are of interest in a C source code..) - Partly done.
-    - When only some syntax group get highlighted for spell errors, <Leader>sn
-      and <Leader>sp don't work as expected.
     - ...
     - reduce this TODO list (I didn't think it would have grown so quickly).
 
