@@ -1,11 +1,11 @@
-"$Id: vimspell.vim,v 1.20 2002/12/03 07:06:56 clabaut Exp $
+"$Id: vimspell.vim,v 1.22 2002/12/09 09:20:16 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell to highlight spelling errors on the fly, or on
 "		    demand. 
 " Author:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Original Author:  Claudio Fleiner <claudio@fleiner.com>
-" Last Change:	    03-Dec-2002.
+" Last Change:	    08-Dec-2002.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -162,8 +162,6 @@
 " TODO list: {{{2
 "---------------- 
 "
-"   - BUG - correct the current behaviour where AutoSpell loses SpellCheck
-"     errors...
 "   - BUG - problem with aspell (0.33.7-redhat 7.2) :
 "     the command :
 "	* new_word
@@ -178,6 +176,10 @@
 "   - selection of syntax group for which spelling is done (for example, only
 "     string and comments are of interest in a C source code..)
 "   - reduce the number of external tools used. 
+"   - Ideally, errors resulting from on the fly spell checking should be added
+"     to a list of all errors (b;spellerrors and SpellErrors highlighting).
+"     The problem is to keep a list of unique word, else the list will grown
+"     too fast... What is the quickiest way to do that ?
 "   - display a statusline like "Spellcheck in progress..." and perhaps
 "     "Spellcheck done: NNN words seem to be misspelled" (Peter Valach
 "     <pvalach@gmx.net>).
@@ -270,8 +272,10 @@ function! s:SpellExit()
   silent "unmap <silent> <buffer> " . s:SpellGetOption("spell_previous_error_map","<esc>p")
   silent "unmap <silent> <buffer> " . s:SpellGetOption("spell_exit_map","<esc><f6>")
   syn match SpellErrors "xxxxx"
+  syn match SpellFlyErrors "xxxxx"
   syn match SpellCorrected "xxxxx"
   syn clear SpellErrors
+  syn clear SpellFlyErrors
   syn clear SpellCorrected
 endfunction
 
@@ -282,8 +286,8 @@ function! s:SpellContextMapping()
   execute "map <silent> <buffer> " . s:SpellGetOption("spell_accept_map","<Leader>su") . ":call <SID>SpellAccept()<cr><c-l>"
   execute "map <silent> <buffer> " . s:SpellGetOption("spell_ignore_map","<Leader>sa") . " :call <SID>SpellIgnore()<cr><c-l>"
   execute "map <silent> <buffer> " . s:SpellGetOption("spell_exit_map","<Leader>sq") . " :let @_=<SID>SpellExit()<CR>"
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_next_error_map","<Leader>sn") . " /" . b:spellerrors . "<cr>:nohl<cr>"
-  execute "map <silent> <buffer> " . s:SpellGetOption("spell_previous_error_map","<Leader>sp") . " ?" . b:spellerrors . "<cr>:nohl<cr>"
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_next_error_map","<Leader>sn") . ' /\<\(' . b:spellerrors . '\|' . b:spell_fly_errors . '\)\><cr>:nohl<cr>'
+  execute "map <silent> <buffer> " . s:SpellGetOption("spell_previous_error_map","<Leader>sp") . ' ?\<\(' . b:spellerrors . '\|' . b:spell_fly_errors . '\)\><cr>:nohl<cr>'
 endfunction                                        
                                                    
 " Function: s:SpellCheck() {{{2
@@ -298,12 +302,14 @@ function! s:SpellCheck()
   silent update
   syn match SpellErrors "xxxxx"
   syn clear SpellErrors
-  let b:spellerrors="\\<\\(nonexisitingwordinthisdociumnt"
+  let b:spellerrors="nonexisitingwordinthisdociumnt"
+  if !exists("b:spell_fly_errors")
+    let b:spell_fly_errors="nonexisitingwordinthisdociumnt"
+  endif
   let b:mappings=system(b:spell_filter . b:spell_executable . b:spell_options . " -l -d ".b:spell_language." < ".expand("%")." | sort -u | sed 's/\\(.*\\)/syntax match SpellErrors \"\\\\<\\1\\\\>\" ".b:spell_no_spelled."| let b:spellerrors=b:spellerrors.\"\\\\\\\\\\\\\\\\|\\1\"/'")
   exe b:mappings
-  let b:spellerrors=b:spellerrors."\\)\\>"
   call s:SpellContextMapping()
-  syn cluster Spell contains=SpellErrors,SpellCorrected
+  syn cluster Spell contains=SpellErrors,SpellCorrected,SpellFlyErrors
   " TODO : show stats about spell check ?
   "echo "Spell check done."
 endfunction
@@ -340,17 +346,19 @@ function! s:SpellCheckWindow()
   " define mappings and syntax hilights for spelling errors
   syn case match
   let @_=s:SpellCheckLanguage()
-  syn match SpellErrors "xxxxx"
-  syn clear SpellErrors
-  let b:spellerrors="\\<\\(nonexisitingwordinthisdociumnt"
+  syn match SpellFlyErrors "xxxxx"
+  syn clear SpellFlyErrors
+  let b:spell_fly_errors="nonexisitingwordinthisdociumnt"
+  if !exists("b:spellerrors")
+    let b:spellerrors="nonexisitingwordinthisdociumnt"
+  endif
 
-  let b:mappings=system(b:spell_filter . b:spell_executable . b:spell_options . " -l -d ".b:spell_language." < ".w:tempname." | sort -u | sed 's/\\(.*\\)/syntax match SpellErrors \"\\\\<\\1\\\\>\" ".b:spell_no_spelled."| let b:spellerrors=b:spellerrors.\"\\\\\\\\\\\\\\\\|\\1\"/'")
+  let b:mappings=system(b:spell_filter . b:spell_executable . b:spell_options . " -l -d ".b:spell_language." < ".w:tempname." | sort -u | sed 's/\\(.*\\)/syntax match SpellFlyErrors \"\\\\<\\1\\\\>\" ".b:spell_no_spelled."| let b:spell_fly_errors=b:spell_fly_errors.\"\\\\\\\\\\\\\\\\|\\1\"/'")
 
   exe b:mappings
-  let b:spellerrors=b:spellerrors."\\)\\>"
   call s:SpellContextMapping()
 
-  syntax cluster Spell contains=SpellErrors,SpellCorrected
+  syntax cluster Spell contains=SpellErrors,SpellCorrected,SpellFlyErrors
 endfunction
 
 
@@ -427,7 +435,7 @@ function! s:SpellCheckLanguage()
   endif
   if !exists("b:spell_language")
     " take first language
-    let b:spell_language=substitute(b:spell_language_list,",.*","","")
+    let b:spell_language=substitute(b:spell_internal_language_list,",.*","","")
     exec "amenu <silent> disable Plugin.Spell.Language.".b:spell_language
   endif
 endfunction
@@ -457,10 +465,17 @@ function! s:SpellSetSpellchecker(prog)
   let b:spell_executable=a:prog
   exec "amenu <silent> disable Plugin.Spell.".b:spell_executable
   "get language list (spell checker dependant)
-  let b:spell_language_list=s:SpellGetOption("spell_language_list", s:SpellGetDicoList()).","
+  let b:spell_internal_language_list=s:SpellGetDicoList().","
+    " Init language menu
+  aunmenu <silent> Plugin.Spell.Language
+  let l:mlang=substitute(b:spell_internal_language_list,",.*","","")
+  while matchstr(l:mlang,",") == "" 
+    exec "amenu <silent> 10.10.50 &Plugin.Spell.&Language.".l:mlang."  :SpellSetLanguage ".l:mlang."<cr>"
+    " take next one
+    let l:mlang=substitute(b:spell_internal_language_list,".*\\C" . l:mlang . ",\\([^,]\\+\\),.*","\\1","")
+  endwhile
   "force spell check
   let b:my_changedtick=0
-  echo "Spell checker: ".b:spell_executable
 endfunction
 
 " Function: s:SpellChangeLanguage() {{{2
@@ -468,14 +483,14 @@ endfunction
 function! s:SpellChangeLanguage()
   if !exists("b:spell_language")
     " take first language
-    let b:spell_language=substitute(b:spell_language_list,",.*","","")
+    let b:spell_language=substitute(b:spell_internal_language_list,",.*","","")
   else
     exec "amenu <silent> enable Plugin.Spell.Language.".b:spell_language
     " take next one
-    let l:res=substitute(b:spell_language_list,".*\\C" . b:spell_language . ",\\([^,]\\+\\),.*","\\1","")
-    if l:res == b:spell_language_list
+    let l:res=substitute(b:spell_internal_language_list,".*\\C" . b:spell_language . ",\\([^,]\\+\\),.*","\\1","")
+    if matchstr(l:res,",") != "" 
       " if no next, take the first
-      let l:res=substitute(b:spell_language_list,",.*","","")
+      let l:res=substitute(b:spell_internal_language_list,",.*","","")
     endif
     let b:spell_language=l:res
   endif
@@ -489,10 +504,10 @@ endfunction
 " try to find a list of install dictionnaries
 function! s:SpellGetDicoList()
   let l:default = "english,francais"
-  if exists("b:spell_language_list")
-    " no need to look for dictionnaries, because the user defined list will be
-    " taken.
-    return l:default
+  let l:opt=s:SpellGetOption("spell_language_list", 0)
+  if l:opt != 0
+    " return user defined language list, if exists
+    return l:opt
   endif
 
   let l:dirfiles=""
@@ -555,14 +570,6 @@ function! s:SpellSetupBuffer()
   call s:SpellSetSpellchecker(s:SpellGetOption("spell_executable","ispell"))
 
   let b:spell_filter=s:SpellGetOption("spell_filter","")
-    " Init language menu
-  aunmenu <silent> Plugin.Spell.Language
-  let l:mlang=substitute(b:spell_language_list,",.*","","")
-  while matchstr(l:mlang,",") == "" 
-    exec "amenu <silent> 10.10.50 &Plugin.Spell.&Language.".l:mlang."  :SpellSetLanguage ".l:mlang."<cr>"
-    " take next one
-    let l:mlang=substitute(b:spell_language_list,".*\\C" . l:mlang . ",\\([^,]\\+\\),.*","\\1","")
-  endwhile
 
     " get filetype and speller dependant options.
   let l:options="spell_".b:spell_executable."_".&filetype."_args"
@@ -578,9 +585,8 @@ function! s:SpellSetupBuffer()
   elseif b:spell_executable == "aspell"
     let b:spell_options=s:SpellGetOption("spell_options","") 
   endif
-  let b:spell_options = b:spell_options ." " .l:ft_options ." "
+  let b:spell_options = " " . b:spell_options ." " .l:ft_options ." "
 
-  let b:spell_executable = b:spell_executable . " "
 endfunction
 
 " Section: Spelling functions {{{1
@@ -622,7 +628,7 @@ com! SpellExit call s:SpellExit()
 com! SpellProposeAlternatives call s:SpellProposeAlternatives()
 com! SpellChangeLanguage call s:SpellChangeLanguage()
 com! -nargs=1 SpellSetLanguage call s:SpellSetLanguage(<f-args>)
-com! -nargs=1 SpellSetSpellchecker call s:SpellSetSpellchecker(<f-args>)
+com! -nargs=1 SpellSetSpellchecker call s:SpellSetSpellchecker(<f-args>)<Bar> echo "Spell checker: ".<f-args>
 
 
 " Section: Plugin  mappings {{{1
@@ -663,6 +669,7 @@ amenu <silent> 10.10.102 &Plugin.Spell.ispell :SpellSetSpellchecker ispell<CR>
 " Section: Plugin init {{{1
 "
   highlight default SpellErrors ctermfg=Red guifg=Red cterm=underline gui=underline term=reverse
+  highlight default link SpellFlyErrors  SpellErrors
     " empty augroup spellchecker
   augroup spellchecker  
     au!
