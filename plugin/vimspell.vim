@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.83 2004/04/21 15:07:14 clabaut Exp $
+"$Id: vimspell.vim,v 1.84 2004/04/22 13:33:13 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell or aspell to highlight spelling errors on the
@@ -8,7 +8,7 @@
 " Maintainer:	    Mathieu Clabaut <mathieu.clabaut@free.fr>
 " Url:		    http://www.vim.org/scripts/script.php?script_id=465
 "
-" Last Change:	    21-Apr-2004.
+" Last Change:	    22-Apr-2004.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -630,8 +630,8 @@ function! s:SpellTuneCommentSyntax(ft)
     endif
     "but not for markup languages, where spelling erros must be also 
     "highlighted outside of the Spell cluster.
-    if stridx(s:SpellGetOption("spell_markup_ft",",html,php,xhtml,dtml,tex,"), 
-	  \ ",".a:ft.",") > -1
+    if stridx(s:SpellGetOption("spell_markup_ft",
+	  \ ",html,php,xhtml,dtml,tex,mail,"), ",".a:ft.",") > -1
       let b:spell_syntax_options = ""
     endif
   endif
@@ -1490,7 +1490,7 @@ endif
 " Section: Doc installation {{{1
 "
   let s:revision=
-	\ substitute("$Revision: 1.83 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\ substitute("$Revision: 1.84 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! let s:install_status =
       \ s:SpellInstallDocumentation(expand('<sfile>:p'), s:revision)
   if (s:install_status == 1)
@@ -1861,7 +1861,7 @@ CONTENT                                                    *vimspell-contents*
       highlights all errors, and not only those included in the @Spell cluster 
       (see |syn-cluster|).
       Defaults to: >
-	  let spell_markup_ft = ",html,php,xhtml,dtml,tex,"
+	  let spell_markup_ft = ",html,php,xhtml,dtml,tex,mail,"
 <     Note the beginning and ending commas.
 
 
