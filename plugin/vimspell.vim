@@ -1,4 +1,4 @@
-"$Id: vimspell.vim,v 1.60 2003/07/21 08:06:32 clabaut Exp $
+"$Id: vimspell.vim,v 1.61 2003/07/22 06:52:23 clabaut Exp $
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Name:		    vimspell
 " Description:	    Use ispell or aspell to highlight spelling errors on the
@@ -7,7 +7,7 @@
 " Original Author:  Claudio Fleiner <claudio@fleiner.com>
 " Url:		    http://www.vim.org/scripts/script.php?script_id=465
 "
-" Last Change:	    21-Jul-2003.
+" Last Change:	    22-Jul-2003.
 "
 " Licence:	    This program is free software; you can redistribute it
 "                   and/or modify it under the terms of the GNU General Public
@@ -398,8 +398,7 @@
 "
 "   How to minimize overhead on a small configuration.
 "
-"       Do not use menu nor auto spell. Put the following line in your .vimrc:
-"       >
+"       Do not use menu nor auto spell. Put the following line in your .vimrc: >
 "         let spell_root_menu   = '-'
 "         let spell_auto_type   = ''
 "         let spell_insert_mode = 0
@@ -718,7 +717,9 @@ function! s:SpellCheckLanguage()
   if !exists("b:spell_language")
     " take first language
     let b:spell_language=substitute(b:spell_internal_language_list,",.*","","")
+    if s:enable_menu
     exec "amenu <silent> disable ".s:menu."Spell.Language.".b:spell_language
+  endif
   endif
 endfunction
 
@@ -862,9 +863,9 @@ endfunction
 " Set buffer dependents variables. This function is called when entering a
 " buffer.
 function! s:SpellSetupBuffer()
-  " If automatic spelling check configuration for each buffer is not enabled,
+  " If automatic spell checking configuration for each buffer is not enabled,
   " make sure we only do setup for each buffer once:
-  if s:enable_autocommand && exists("b:spell_buffer_setup")
+  if !s:enable_autocommand && exists("b:spell_buffer_setup")
     return
   endif
 
@@ -1561,7 +1562,7 @@ endif
     endif
   endif
   let s:revision=
-	\ substitute("$Revision: 1.60 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+	\ substitute("$Revision: 1.61 $",'\$\S*: \([.0-9]\+\) \$','\1','')
   silent! call s:SpellInstallDocumentation(s:revision)
   if exists("s:help_doc")
     echo "vimspell v" . s:revision . ": Installed help-documentation."
@@ -1581,7 +1582,7 @@ endif
   " If the menu and the automatic spelling check are both disabled, we should
   " not install BufEnter autocommand to minimize performance impact. The flag
   " s:enable_autocommand is used to indicate whether we should enable
-  " automatic spelling check configuration for each buffer:
+  " automatic spell checking configuration for each buffer:
   let s:enable_autocommand=(s:enable_menu  ||
         \ s:SpellGetOption("spell_auto_type", "Default") != "")
 
